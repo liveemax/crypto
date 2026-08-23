@@ -923,6 +923,37 @@
         ],
         "type": "object"
       },
+      "ResearchMetricFieldDto": {
+        "properties": {
+          "field": {
+            "description": "Имя поля внутри источника в ответе страницы протокола.",
+            "type": "string"
+          },
+          "metricRef": {
+            "description": "Значение ResearchMetricRef, на которое ссылается структурированная причина вердикта.",
+            "type": "string"
+          },
+          "placeholder": {
+            "description": "Строка плейсхолдера без фигурных скобок; в прозе пишется как {{placeholder}}.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Откуда берётся значение: snapshot — измеренные числа среза, valuation — расчётные уровни оценки.",
+            "enum": [
+              "snapshot",
+              "valuation"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "metricRef",
+          "source",
+          "field",
+          "placeholder"
+        ],
+        "type": "object"
+      },
       "ResearchPreviewMetricsDto": {
         "properties": {
           "fdvRevenue": {
@@ -1881,6 +1912,32 @@
         "summary": "Проверить состояние Research API",
         "tags": [
           "Research read"
+        ]
+      }
+    },
+    "/api/v1/metric-fields": {
+      "get": {
+        "description": "Отдаёт тот же перечень, по которому сервер отвергает неизвестный плейсхолдер. Сайт строит по нему панель вставки и подсветку опечаток; собственной копии списка у клиента быть не должно — она разойдётся на первом новом поле.",
+        "operationId": "ResearchMetricFieldsController_fields",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResearchMetricFieldDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Полный перечень полей, допустимых в плейсхолдерах прозы вердикта. Публичная ручка: списком не раскрывается ни одно значение, только имена."
+          }
+        },
+        "summary": "Поля, допустимые в плейсхолдерах прозы вердикта",
+        "tags": [
+          "research"
         ]
       }
     },

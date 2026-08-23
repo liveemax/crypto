@@ -24,6 +24,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/metric-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Поля, допустимые в плейсхолдерах прозы вердикта
+         * @description Отдаёт тот же перечень, по которому сервер отвергает неизвестный плейсхолдер. Сайт строит по нему панель вставки и подсветку опечаток; собственной копии списка у клиента быть не должно — она разойдётся на первом новом поле.
+         */
+        get: operations["ResearchMetricFieldsController_fields"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/preview/metrics": {
         parameters: {
             query?: never;
@@ -768,6 +788,19 @@ export interface components {
             /** @description Порог доли владения для крупного держателя в процентах, где 5 означает 5%; null — порог не задан. */
             whaleThresholdPct: number | null;
         };
+        ResearchMetricFieldDto: {
+            /** @description Имя поля внутри источника в ответе страницы протокола. */
+            field: string;
+            /** @description Значение ResearchMetricRef, на которое ссылается структурированная причина вердикта. */
+            metricRef: string;
+            /** @description Строка плейсхолдера без фигурных скобок; в прозе пишется как {{placeholder}}. */
+            placeholder: string;
+            /**
+             * @description Откуда берётся значение: snapshot — измеренные числа среза, valuation — расчётные уровни оценки.
+             * @enum {string}
+             */
+            source: "snapshot" | "valuation";
+        };
         ResearchPreviewMetricsDto: {
             /** @description Отношение FDV к годовой выручке, выраженное множителем; null — расчёт невозможен. */
             fdvRevenue: number | null;
@@ -1180,6 +1213,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ResearchMetricFieldsController_fields: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Полный перечень полей, допустимых в плейсхолдерах прозы вердикта. Публичная ручка: списком не раскрывается ни одно значение, только имена. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchMetricFieldDto"][];
+                };
             };
         };
     };

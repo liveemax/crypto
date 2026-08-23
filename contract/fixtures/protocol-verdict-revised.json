@@ -1,0 +1,131 @@
+{
+  "protocol": {
+    "slug": "seed-lending-peer-2",
+    "name": "Seed Lending Peer 2",
+    "ticker": "LEND2",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "contracts": {
+      "ethereum": "0x0000000000000000000000000000000000000002"
+    },
+    "defillamaSlug": null,
+    "coingeckoId": null,
+    "isPublished": true,
+    "createdAt": "2026-08-18T13:08:49.380Z",
+    "updatedAt": "2026-08-23T16:44:12.029Z"
+  },
+  "methodology": {
+    "version": 1,
+    "revenueDefinition": "Protocol revenue after user-paid interest expenses",
+    "adapterUrl": null,
+    "incentivesSource": null,
+    "buybackPolicy": null,
+    "excludedAddresses": [],
+    "whaleThresholdPct": 50,
+    "reserveFactorSource": null,
+    "feeStructureSource": null,
+    "createdAt": "2026-08-18T13:08:49.384Z",
+    "updatedAt": "2026-08-18T13:08:49.384Z"
+  },
+  "snapshot": {
+    "takenAt": "2026-08-23T16:44:12.050Z",
+    "price": 1,
+    "circulatingSupply": 400000000,
+    "totalSupply": 1000000000,
+    "marketCap": 400000000,
+    "fdv": 300000000,
+    "protocolRevenue12m": 10000000,
+    "tokenIncentives12m": 1000000,
+    "netRevenue12m": 9000000,
+    "fdvRevenue": 30,
+    "buybackAnnualUsd": 2000000,
+    "varPct": 0.5,
+    "emissions12mTokens": 20000000,
+    "unlocks12mTokens": 0,
+    "sprPct": 5,
+    "netTokenFlowPct": -4.5,
+    "sourceStatus": "OK",
+    "sourceErrors": null,
+    "createdAt": "2026-08-23T16:44:12.179Z",
+    "updatedAt": "2026-08-23T16:44:12.179Z",
+    "valuation": {
+      "sectorMedianFdvRevenue": 40,
+      "fairFdv": 400000000,
+      "premiumPct": -25,
+      "flowNeutralPrice": 0.1,
+      "impliedRevenue": 7500000,
+      "impliedGrowthX": 0.75,
+      "sectorSampleSize": 5,
+      "createdAt": "2026-08-23T16:44:12.181Z",
+      "updatedAt": "2026-08-23T16:44:12.181Z"
+    }
+  },
+  "verdict": {
+    "version": "1.1",
+    "riskLabel": "LOW",
+    "killersFired": [],
+    "changeReason": null,
+    "publishedAt": "2026-01-01T00:00:00.000Z",
+    "isPublished": true,
+    "createdAt": "2026-08-23T16:25:21.774Z",
+    "updatedAt": "2026-08-23T16:44:12.051Z",
+    "snapshotTakenAt": "2026-08-23T16:44:12.045Z",
+    "reasons": [
+      {
+        "position": 1,
+        "metricRef": "PRICE",
+        "createdAt": "2026-08-23T16:44:12.238Z",
+        "updatedAt": "2026-08-23T16:44:12.238Z"
+      },
+      {
+        "position": 2,
+        "metricRef": "FDV_REVENUE",
+        "createdAt": "2026-08-23T16:44:12.238Z",
+        "updatedAt": "2026-08-23T16:44:12.238Z"
+      },
+      {
+        "position": 3,
+        "metricRef": "NET_TOKEN_FLOW_PCT",
+        "createdAt": "2026-08-23T16:44:12.238Z",
+        "updatedAt": "2026-08-23T16:44:12.238Z"
+      }
+    ],
+    "text": {
+      "body": "Seed Lending Peer 2: цена {{snapshot.price}}, мультипликатор {{snapshot.fdvRevenue}}.",
+      "counterarguments": "Короткая история наблюдений ограничивает уверенность вывода.",
+      "changeSummary": "Добавлена локализованная версия демонстрационного разбора.",
+      "reasonTexts": [
+        "Текущая цена",
+        "Мультипликатор выручки",
+        "Чистый поток токенов"
+      ],
+      "isMachineTranslated": false,
+      "createdAt": "2026-08-23T16:44:12.243Z",
+      "updatedAt": "2026-08-23T16:44:12.243Z"
+    },
+    "availableLocales": [
+      "RU",
+      "EN"
+    ]
+  },
+  "triggers": [
+    {
+      "metric": "FDV_REVENUE",
+      "operator": "GTE",
+      "threshold": 60,
+      "verdictEffect": "Review the sector multiple",
+      "isPublic": true,
+      "botTier": "FREE",
+      "isActive": true,
+      "createdAt": "2026-08-23T16:44:12.044Z",
+      "updatedAt": "2026-08-23T16:44:12.044Z"
+    }
+  ],
+  "freshness": {
+    "status": "VERDICT_REVISED",
+    "baselineTakenAt": "2026-08-23T16:44:12.045Z",
+    "deviations": []
+  }
+}

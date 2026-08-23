@@ -1,0 +1,102 @@
+[
+  {
+    "slug": "a6-key-check",
+    "name": "A6 Key Check",
+    "ticker": "A6",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-18T12:00:00.000Z"
+  },
+  {
+    "slug": "aave",
+    "name": "string",
+    "ticker": "string",
+    "sector": "LENDING",
+    "chains": [
+      "string"
+    ],
+    "takenAt": "2026-08-21T16:58:36.109Z"
+  },
+  {
+    "slug": "repro",
+    "name": "Repro",
+    "ticker": "RPR",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": null
+  },
+  {
+    "slug": "seed-lending",
+    "name": "Seed Lending",
+    "ticker": "LEND",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-23T16:44:10.462Z"
+  },
+  {
+    "slug": "seed-lending-peer-1",
+    "name": "Seed Lending Peer 1",
+    "ticker": "LEND1",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-23T16:44:11.596Z"
+  },
+  {
+    "slug": "seed-lending-peer-2",
+    "name": "Seed Lending Peer 2",
+    "ticker": "LEND2",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-23T16:44:12.050Z"
+  },
+  {
+    "slug": "seed-lending-peer-3",
+    "name": "Seed Lending Peer 3",
+    "ticker": "LEND3",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-23T16:44:12.349Z"
+  },
+  {
+    "slug": "seed-lending-peer-4",
+    "name": "Seed Lending Peer 4",
+    "ticker": "LEND4",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-23T16:44:12.749Z"
+  },
+  {
+    "slug": "seed-lending-peer-5",
+    "name": "Seed Lending Peer 5",
+    "ticker": "LEND5",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "takenAt": "2026-08-23T16:44:13.038Z"
+  },
+  {
+    "slug": "seed-perps",
+    "name": "Seed Perpetuals",
+    "ticker": "PERP",
+    "sector": "PERPS",
+    "chains": [
+      "arbitrum"
+    ],
+    "takenAt": "2026-08-23T16:44:11.096Z"
+  }
+]

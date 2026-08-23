@@ -1,0 +1,124 @@
+{
+  "protocol": {
+    "slug": "seed-lending",
+    "name": "Seed Lending",
+    "ticker": "LEND",
+    "sector": "LENDING",
+    "chains": [
+      "ethereum"
+    ],
+    "contracts": {
+      "ethereum": "0x0000000000000000000000000000000000000001"
+    },
+    "defillamaSlug": null,
+    "coingeckoId": null,
+    "isPublished": true,
+    "createdAt": "2026-08-18T12:38:08.210Z",
+    "updatedAt": "2026-08-23T16:44:10.317Z"
+  },
+  "methodology": {
+    "version": 1,
+    "revenueDefinition": "Protocol revenue after user-paid interest expenses",
+    "adapterUrl": null,
+    "incentivesSource": null,
+    "buybackPolicy": null,
+    "excludedAddresses": [],
+    "whaleThresholdPct": 50,
+    "reserveFactorSource": null,
+    "feeStructureSource": null,
+    "createdAt": "2026-08-18T12:38:08.232Z",
+    "updatedAt": "2026-08-18T12:38:08.232Z"
+  },
+  "snapshot": {
+    "takenAt": "2026-08-23T16:44:10.462Z",
+    "price": 1.3,
+    "circulatingSupply": 400000000,
+    "totalSupply": 1000000000,
+    "marketCap": 520000000,
+    "fdv": 1300000000,
+    "protocolRevenue12m": null,
+    "tokenIncentives12m": 2000000,
+    "netRevenue12m": null,
+    "fdvRevenue": null,
+    "buybackAnnualUsd": 4400000,
+    "varPct": 0.8461538461538461,
+    "emissions12mTokens": 40000000,
+    "unlocks12mTokens": 32000000,
+    "sprPct": 18,
+    "netTokenFlowPct": -17.153846153846153,
+    "sourceStatus": "PARTIAL",
+    "sourceErrors": [
+      "protocolRevenue12m is intentionally unavailable"
+    ],
+    "createdAt": "2026-08-23T16:44:10.826Z",
+    "updatedAt": "2026-08-23T16:44:10.826Z",
+    "valuation": null
+  },
+  "verdict": {
+    "version": "1.1",
+    "riskLabel": "HIGH",
+    "killersFired": [
+      "MISSING_CRITICAL_DATA"
+    ],
+    "changeReason": null,
+    "publishedAt": "2026-01-01T00:00:00.000Z",
+    "isPublished": true,
+    "createdAt": "2026-08-23T16:25:21.122Z",
+    "updatedAt": "2026-08-23T16:44:10.458Z",
+    "snapshotTakenAt": "2026-08-23T16:44:10.457Z",
+    "reasons": [
+      {
+        "position": 1,
+        "metricRef": "PRICE",
+        "createdAt": "2026-08-23T16:44:10.976Z",
+        "updatedAt": "2026-08-23T16:44:10.976Z"
+      },
+      {
+        "position": 2,
+        "metricRef": "FDV_REVENUE",
+        "createdAt": "2026-08-23T16:44:10.976Z",
+        "updatedAt": "2026-08-23T16:44:10.976Z"
+      },
+      {
+        "position": 3,
+        "metricRef": "NET_TOKEN_FLOW_PCT",
+        "createdAt": "2026-08-23T16:44:10.976Z",
+        "updatedAt": "2026-08-23T16:44:10.976Z"
+      }
+    ],
+    "text": {
+      "body": "Seed Lending: цена {{snapshot.price}}, мультипликатор {{snapshot.fdvRevenue}}.",
+      "counterarguments": "Короткая история наблюдений ограничивает уверенность вывода.",
+      "changeSummary": "Добавлена локализованная версия демонстрационного разбора.",
+      "reasonTexts": [
+        "Текущая цена",
+        "Мультипликатор выручки",
+        "Чистый поток токенов"
+      ],
+      "isMachineTranslated": false,
+      "createdAt": "2026-08-23T16:44:10.984Z",
+      "updatedAt": "2026-08-23T16:44:10.984Z"
+    },
+    "availableLocales": [
+      "RU"
+    ]
+  },
+  "triggers": [
+    {
+      "metric": "PROTOCOL_REVENUE_12M",
+      "operator": "GTE",
+      "threshold": 10000000,
+      "verdictEffect": "Review the missing-data killer",
+      "isPublic": true,
+      "botTier": "FREE",
+      "isActive": true,
+      "createdAt": "2026-08-23T16:44:10.436Z",
+      "updatedAt": "2026-08-23T16:44:10.436Z"
+    }
+  ],
+  "freshness": {
+    "status": "CURRENT",
+    "baselineTakenAt": "2026-08-23T16:44:10.457Z",
+    "deviations": []
+  }
+}

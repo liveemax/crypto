@@ -4,7 +4,7 @@ import {
   Alert, Button, Divider, FormControlLabel, MenuItem, Paper, Stack,
   Switch, TextField, Typography,
 } from "@mui/material";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 
 import { buildMethodologyBody, type MethodologyFormValues } from "../../lib/methodology";
 import { changedProtocolFields, type ProtocolValues } from "../../lib/protocol";
@@ -31,12 +31,15 @@ export function ProtocolForm({ initial, onCancel, onSaved }: { initial: Protocol
   const [methodology, setMethodology] = useState<MethodologyFormValues>(source ? { ...source, adapterUrl: source.adapterUrl ?? "", incentivesSource: source.incentivesSource ?? "", buybackPolicy: source.buybackPolicy ?? "", excludedAddresses: source.excludedAddresses ?? [], whaleThresholdPct: source.whaleThresholdPct?.toString() ?? "", reserveFactorSource: source.reserveFactorSource ?? "", feeStructureSource: source.feeStructureSource ?? "" } : emptyMethodology);
   const [addresses, setAddresses] = useState((source?.excludedAddresses ?? []).join("\n"));
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string>(); const [slugError, setSlugError] = useState<string>();
+  const requestInFlight = useRef(false);
 
   function parsedProtocol(): ProtocolValues {
     return { ...protocol, chains: chains.split("\n").map((v) => v.trim()).filter(Boolean), contracts: JSON.parse(contracts), defillamaSlug: nullable(protocol.defillamaSlug ?? ""), coingeckoId: nullable(protocol.coingeckoId ?? "") };
   }
   async function saveProtocol(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError(undefined); setSlugError(undefined);
+    event.preventDefault();
+    if (requestInFlight.current) return;
+    requestInFlight.current = true; setBusy(true); setError(undefined); setSlugError(undefined);
     try {
       const value = parsedProtocol(); const body = initial ? changedProtocolFields(baseline, value) : { slug, ...value };
       if (initial && Object.keys(body).length === 0) { setError("В паспорте нет изменений."); return; }
@@ -44,17 +47,18 @@ export function ProtocolForm({ initial, onCancel, onSaved }: { initial: Protocol
     } catch (reason) {
       if ((reason as { status?: number }).status === 409) setSlugError("Такой slug уже существует. Выберите другой.");
       else setError(reason instanceof Error ? reason.message : "Не удалось сохранить паспорт.");
-    } finally { setBusy(false); }
+    } finally { requestInFlight.current = false; setBusy(false); }
   }
   async function saveMethodology(mode: "append" | "replace") {
-    if (!initial) return; setBusy(true); setError(undefined);
+    if (!initial || requestInFlight.current) return;
+    requestInFlight.current = true; setBusy(true); setError(undefined);
     try {
       const values = { ...methodology, excludedAddresses: addresses.split("\n").map((v) => v.trim()).filter(Boolean) };
       const body = buildMethodologyBody(values, mode === "replace");
       const path = mode === "append" ? `/protocols/${encodeURIComponent(initial.slug)}/methodology` : `/protocols/${encodeURIComponent(initial.slug)}/methodology/${methodology.version}`;
       await request(path, mode === "append" ? "POST" : "PUT", body); await onSaved();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Не удалось сохранить методику."); }
-    finally { setBusy(false); }
+    finally { requestInFlight.current = false; setBusy(false); }
   }
   const field = (key: keyof MethodologyFormValues, label: string, required = false) => <TextField fullWidth label={label} onChange={(event) => setMethodology((old) => ({ ...old, [key]: event.target.value }))} required={required} value={String(methodology[key])} />;
   return <Paper sx={{ p: 3 }}>

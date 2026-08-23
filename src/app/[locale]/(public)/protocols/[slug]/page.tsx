@@ -1,17 +1,56 @@
 import { Alert, Box, Chip, Container, Divider, Paper, Stack, Typography } from "@mui/material";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 
 import type { components } from "@/contract/api";
 import { researchApi } from "@/contract/client";
 import { metricLabels } from "@/lib/metric-labels";
 import { formatResearchNumber, freshnessText, renderResearchText, snapshotMetric, type PublicLocale } from "@/lib/public-research";
+import { pageHasLocale, publicLocales, siteOrigin, type SiteLocale } from "@/lib/site";
 
 import styles from "./styles.module.scss";
 
 type PageData = components["schemas"]["ResearchProtocolPageDto"];
 type VerdictText = { body: string; counterarguments: string; reasonTexts: string[] };
 export const revalidate = 300;
+
+const loadProtocol = cache(async (slug: string, locale: SiteLocale) =>
+  researchApi<PageData>(`/api/v1/protocols/${encodeURIComponent(slug)}`, { query: { locale } }),
+);
+
+export async function generateMetadata({ params }: { params: { locale: string; slug: string } }): Promise<Metadata> {
+  if (!publicLocales.includes(params.locale as SiteLocale)) return {};
+  const locale = params.locale as SiteLocale;
+  const result = await loadProtocol(params.slug, locale);
+  if (!result.ok) return {};
+  const { protocol, snapshot, verdict } = result.data;
+  const origin = siteOrigin();
+  const pathname = `/${locale}/protocols/${protocol.slug}`;
+  const languages: Record<string, string> = { ru: `${origin}/ru/protocols/${protocol.slug}` };
+  if (pageHasLocale(result.data, "en")) languages.en = `${origin}/en/protocols/${protocol.slug}`;
+  const snapshotDate = snapshot?.takenAt
+    ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(snapshot.takenAt))
+    : locale === "ru" ? "нет подтверждённого среза" : "no verified snapshot";
+  const risk = verdict?.riskLabel ?? (locale === "ru" ? "не определён" : "not rated");
+  const description = locale === "ru"
+    ? `${protocol.name}: риск ${risk}, срез ${snapshotDate}.`
+    : `${protocol.name}: ${risk} risk, snapshot ${snapshotDate}.`;
+
+  return {
+    title: `${protocol.name} (${protocol.ticker})`,
+    description,
+    alternates: { canonical: `${origin}${pathname}`, languages },
+    openGraph: {
+      type: "article",
+      url: `${origin}${pathname}`,
+      title: `${protocol.name} — ${risk}`,
+      description,
+      locale: locale === "ru" ? "ru_RU" : "en_US",
+    },
+  };
+}
 
 function metricLabel(metric: string, locale: PublicLocale): string {
   return metricLabels[metric as keyof typeof metricLabels]?.[locale] ?? metric;
@@ -20,7 +59,7 @@ function metricLabel(metric: string, locale: PublicLocale): string {
 export default async function ProtocolPage({ params }: { params: { locale: string; slug: string } }) {
   if (params.locale !== "ru" && params.locale !== "en") notFound();
   const locale = params.locale as PublicLocale;
-  const result = await researchApi<PageData>(`/api/v1/protocols/${encodeURIComponent(params.slug)}`, { query: { locale } });
+  const result = await loadProtocol(params.slug, locale);
   if (!result.ok) {
     if (result.status === 404) notFound();
     throw new Error(result.message);

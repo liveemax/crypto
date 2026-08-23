@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { formatResearchNumber, freshnessText, renderResearchText } from "../src/lib/public-research.ts";
 import { sortSectorRows } from "../src/lib/sector-table.ts";
+import { pageHasLocale, preferredLocale } from "../src/lib/site.ts";
 
 test("all freshness states have distinct, localized messages", () => {
   const states = ["CURRENT", "DATA_CHANGED", "VERDICT_REVISED", "DATA_UNVERIFIED"];
@@ -39,4 +40,17 @@ test("public number rendering distinguishes unavailable data from measured zero"
   assert.equal(formatResearchNumber(null, "ru"), "—");
   assert.equal(formatResearchNumber(0, "ru"), "0");
   assert.equal(renderResearchText("{{snapshot.price}} / {{snapshot.fdvRevenue}}", { price: 0, fdvRevenue: null }, "en"), "0 / —");
+});
+
+test("root locale follows weighted Accept-Language and defaults to Russian", () => {
+  assert.equal(preferredLocale("de, en;q=0.9, ru;q=0.8"), "en");
+  assert.equal(preferredLocale("en;q=0.2, ru;q=0.9"), "ru");
+  assert.equal(preferredLocale(null), "ru");
+});
+
+test("English alternates are emitted only for verdicts with an English text", () => {
+  const page = { verdict: { availableLocales: ["RU"] } };
+  assert.equal(pageHasLocale(page, "ru"), true);
+  assert.equal(pageHasLocale(page, "en"), false);
+  assert.equal(pageHasLocale({ verdict: { availableLocales: ["RU", "EN"] } }, "en"), true);
 });

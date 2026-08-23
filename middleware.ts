@@ -5,6 +5,13 @@ import { ADMIN_SESSION_COOKIE, verifyAdminSession } from "./src/lib/admin-auth";
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
+  if (!pathname.startsWith("/admin") && !pathname.startsWith("/api/admin")) {
+    const requestHeaders = new Headers(request.headers);
+    const locale = pathname.match(/^\/(ru|en)(?:\/|$)/)?.[1] ?? "ru";
+    requestHeaders.set("x-site-locale", locale);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   if (pathname === "/admin/login") return NextResponse.next();
 
   const password = process.env.ADMIN_PASSWORD;
@@ -24,5 +31,5 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

@@ -6,3 +6,5 @@ out/
 *.tsbuildinfo
 .DS_Store
 pnpm-debug.log*
+.git
+pnpm-lock.yaml

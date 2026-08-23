@@ -1,5 +1,0 @@
-{
-  "message": "A published verdict must be created with reasons and at least one locale",
-  "error": "Bad Request",
-  "statusCode": 400
-}

@@ -26,3 +26,8 @@ export async function findProtocolFixture(
   }
   return undefined;
 }
+
+/** Selects the recorded sector response, including the explicit empty-state scenario. */
+export function sectorTableFixture(sector: string): string {
+  return sector.toLowerCase() === "empty" ? "sector-table-empty.json" : "sector-table.json";
+}

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { paths } from "./api";
-import { findProtocolFixture } from "./fixture-resolver";
+import { findProtocolFixture, sectorTableFixture } from "./fixture-resolver";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const RETRYABLE_STATUS = 500;
@@ -163,7 +163,8 @@ async function fixtureFor(path: string): Promise<string | undefined> {
   if (pathname === "/api/v1/metric-fields") return "metric-fields.json";
   if (/\/verdicts$/.test(pathname)) return "verdicts.json";
   if (/\/snapshots$/.test(pathname)) return "snapshots.json";
-  if (/\/sectors\/[^/]+\/table$/.test(pathname)) return "sector-table.json";
+  const sector = pathname.match(/^\/api\/v1\/sectors\/([^/]+)\/table$/)?.[1];
+  if (sector) return sectorTableFixture(decodeURIComponent(sector));
 
   const protocol = pathname.match(/^\/api\/v1\/protocols\/([^/]+)$/)?.[1];
   return protocol

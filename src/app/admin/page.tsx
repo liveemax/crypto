@@ -7,7 +7,7 @@ export default function AdminPage() {
     <Container maxWidth="xl" sx={{ py: 5 }}>
       <Typography component="h1" variant="h3">Редактор разборов</Typography>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
-        Паспорта протоколов и версии методики расчёта
+        Паспорта, методики, снимки и версии разборов
       </Typography>
       <ProtocolAdmin />
     </Container>

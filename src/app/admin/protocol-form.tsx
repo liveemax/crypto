@@ -11,6 +11,7 @@ import { changedProtocolFields, type ProtocolValues } from "../../lib/protocol";
 import type { ProtocolDetails } from "./admin-types";
 import { DeleteProtocolDialog } from "./protocol-admin";
 import { SnapshotAdmin } from "./snapshot-admin";
+import { VerdictAdmin } from "./verdict-admin";
 
 const emptyProtocol: ProtocolValues = { name: "", ticker: "", sector: "LENDING", chains: [], contracts: {}, defillamaSlug: null, coingeckoId: null, isPublished: false };
 const emptyMethodology: MethodologyFormValues = { version: 1, revenueDefinition: "", adapterUrl: "", incentivesSource: "", buybackPolicy: "", excludedAddresses: [], whaleThresholdPct: "", reserveFactorSource: "", feeStructureSource: "" };
@@ -85,6 +86,6 @@ export function ProtocolForm({ initial, onCancel, onSaved }: { initial: Protocol
       <TextField helperText="Один адрес на строку; пустой список будет сохранён как null" label="Исключённые адреса" multiline minRows={3} onChange={(e) => setAddresses(e.target.value)} value={addresses} />
       {field("whaleThresholdPct", "Порог кита, %")}{field("reserveFactorSource", "Источник reserve factor")}{field("feeStructureSource", "Источник структуры комиссий")}
       <Stack direction="row" spacing={1}><Button disabled={busy} onClick={() => void saveMethodology("replace")} variant="contained">Заменить версию {methodology.version}</Button><Button disabled={busy} onClick={() => void saveMethodology("append")} variant="outlined">Создать следующую версию</Button></Stack>
-    </Stack><SnapshotAdmin sector={initial.sector} slug={initial.slug} /></> : null}
+    </Stack><SnapshotAdmin sector={initial.sector} slug={initial.slug} /><VerdictAdmin slug={initial.slug} /></> : null}
   </Paper>;
 }

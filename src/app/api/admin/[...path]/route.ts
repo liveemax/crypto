@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 import { researchAdminApi, researchApi, type ApiResult } from "../../../../contract/client";
 import { ADMIN_SESSION_COOKIE, verifyAdminSession } from "../../../../lib/admin-auth";
@@ -19,6 +20,13 @@ async function handle(request: NextRequest, context: Context): Promise<NextRespo
   const deletesProtocol = method === "DELETE" && /^\/api\/v1\/protocols\/[^/]+$/.test(path);
   const call = deletesProtocol ? researchAdminApi : researchApi;
   const result = await call<unknown>(path, { method, query, body });
+  if (result.ok && method !== "GET") {
+    const slug = context.params.path[0] === "protocols" ? context.params.path[1] : undefined;
+    if (slug) {
+      revalidatePath(`/ru/protocols/${slug}`);
+      revalidatePath(`/en/protocols/${slug}`);
+    }
+  }
   return response(result);
 }
 

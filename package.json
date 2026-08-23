@@ -13,6 +13,7 @@
     "contract:types": "openapi-typescript contract/openapi.json -o src/contract/api.d.ts",
     "contract:check": "node scripts/check-contract.mjs",
     "contract:pull": "node scripts/pull-contract.mjs",
+    "live:check": "node scripts/check-live-fixture.mjs",
     "prepare": "husky"
   },
   "dependencies": {

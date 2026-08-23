@@ -1,11 +1,8 @@
-import { Container, Typography } from "@mui/material";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
-export default function HomePage() {
-  return (
-    <Container component="main" sx={{ py: 6 }}>
-      <Typography component="h1" variant="h3">
-        Crypto Research
-      </Typography>
-    </Container>
-  );
+import { preferredLocale } from "@/lib/site";
+
+export default function HomePage(): never {
+  redirect(`/${preferredLocale(headers().get("accept-language"))}`);
 }

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { paths } from "./api";
+import { findProtocolFixture } from "./fixture-resolver";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const RETRYABLE_STATUS = 500;
@@ -134,7 +135,7 @@ async function requestFixture<TResponse, TBody>(
     };
   }
 
-  const fixtureName = fixtureFor(path);
+  const fixtureName = await fixtureFor(path);
   if (!fixtureName) {
     return { ok: false, status: 404, kind: "api", message: `No fixture maps to GET ${path}.` };
   }
@@ -156,7 +157,7 @@ async function readFixture<TResponse>(fixtureName: string): Promise<ApiResult<TR
   }
 }
 
-function fixtureFor(path: string): string | undefined {
+async function fixtureFor(path: string): Promise<string | undefined> {
   const pathname = path.split("?")[0];
   if (pathname === "/api/v1/protocols") return "protocols.json";
   if (pathname === "/api/v1/metric-fields") return "metric-fields.json";
@@ -165,7 +166,9 @@ function fixtureFor(path: string): string | undefined {
   if (/\/sectors\/[^/]+\/table$/.test(pathname)) return "sector-table.json";
 
   const protocol = pathname.match(/^\/api\/v1\/protocols\/([^/]+)$/)?.[1];
-  return protocol ? `protocol-${decodeURIComponent(protocol)}.json` : undefined;
+  return protocol
+    ? findProtocolFixture(decodeURIComponent(protocol), FIXTURES_DIRECTORY)
+    : undefined;
 }
 
 async function readResponseBody(response: Response): Promise<unknown> {

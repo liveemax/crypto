@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -9,7 +9,11 @@ interface CacheEntry<T> {
 
 @Injectable()
 export class StoreService {
-  constructor(private readonly root = join(process.cwd(), 'data')) {}
+  constructor(
+    @Optional()
+    @Inject('STORE_ROOT')
+    private readonly root: string = join(process.cwd(), 'data'),
+  ) {}
 
   /** Возвращает непросроченное значение из файлового кэша. */
   async cacheGet<T>(ns: string, key: string, ttlDays = 1): Promise<T | null> {

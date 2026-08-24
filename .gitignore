@@ -1,10 +1,17 @@
 node_modules/
 .next/
 out/
+dist/
 .env*
 !.env.example
+coverage/
 *.tsbuildinfo
 .DS_Store
 pnpm-debug.log*
 .git
 pnpm-lock.yaml
+
+data/*
+!data/.gitkeep
+reports/*
+!reports/.gitkeep

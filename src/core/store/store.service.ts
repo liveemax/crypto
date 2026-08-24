@@ -1,0 +1,132 @@
+import { Injectable } from '@nestjs/common';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+
+interface CacheEntry<T> {
+  savedAt: string;
+  value: T;
+}
+
+@Injectable()
+export class StoreService {
+  constructor(private readonly root = join(process.cwd(), 'data')) {}
+
+  /** Возвращает непросроченное значение из файлового кэша. */
+  async cacheGet<T>(ns: string, key: string, ttlDays = 1): Promise<T | null> {
+    const path = join(this.root, 'cache', this.safe(ns), `${this.safe(key)}.json`);
+    try {
+      const entry = await this.readJson<CacheEntry<T>>(path);
+      const ageMs = Date.now() - Date.parse(entry.savedAt);
+      return Number.isFinite(ageMs) && ageMs <= ttlDays * 86_400_000 ? entry.value : null;
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return null;
+      throw error;
+    }
+  }
+
+  /** Сохраняет значение в файловый кэш и возвращает его без изменений. */
+  async cachePut<T>(ns: string, key: string, value: T): Promise<T> {
+    const path = join(this.root, 'cache', this.safe(ns), `${this.safe(key)}.json`);
+    await this.writeJson(path, { savedAt: new Date().toISOString(), value }, true);
+    return value;
+  }
+
+  /** Сохраняет неизменённый ответ внешнего источника до обработки. */
+  async saveRaw(source: string, name: string, payload: unknown): Promise<string> {
+    const date = this.today();
+    const dir = join(this.root, 'raw', date, this.safe(source));
+    const path = await this.availablePath(dir, this.safe(name));
+    await this.writeJson(path, payload);
+    return path;
+  }
+
+  /** Сохраняет именованный снапшот, не перезаписывая существующие файлы. */
+  async saveSnapshot(name: string, rows: unknown): Promise<string> {
+    const path = await this.availablePath(join(this.root, 'snapshots'), `${this.today()}_${this.safe(name)}`);
+    await this.writeJson(path, rows);
+    return path;
+  }
+
+  /** Загружает последний снапшот по имени или снапшот за указанную дату. */
+  async loadSnapshot<T>(name: string, onDate?: string): Promise<T | null> {
+    const prefix = `${onDate ?? ''}${onDate ? '_' : ''}${this.safe(name)}`;
+    return this.loadLatest<T>(join(this.root, 'snapshots'), prefix, onDate === undefined);
+  }
+
+  /** Сохраняет результат агента в каталоге текущей даты. */
+  async saveResult(agent: string, token: string, result: unknown): Promise<string> {
+    const dir = join(this.root, 'results', this.today(), this.safe(agent));
+    const path = await this.availablePath(dir, this.safe(token));
+    await this.writeJson(path, result);
+    return path;
+  }
+
+  /** Загружает последний результат агента и токена за дату. */
+  async loadResult<T>(agent: string, token: string, onDate = this.today()): Promise<T | null> {
+    return this.loadLatest<T>(
+      join(this.root, 'results', this.safe(onDate), this.safe(agent)),
+      this.safe(token),
+      false,
+    );
+  }
+
+  private async loadLatest<T>(dir: string, prefix: string, anyDate: boolean): Promise<T | null> {
+    try {
+      const files = (await readdir(dir)).filter((file) => {
+        const expected = anyDate ? new RegExp(`^\\d{4}-\\d{2}-\\d{2}_${this.escape(prefix)}(?:_|\\.json)`) : new RegExp(`^${this.escape(prefix)}(?:_|\\.json)`);
+        return expected.test(file) && file.endsWith('.json');
+      });
+      if (files.length === 0) return null;
+      const candidates = await Promise.all(files.map(async (file) => ({ file, stats: await stat(join(dir, file)) })));
+      candidates.sort((left, right) => right.stats.mtimeMs - left.stats.mtimeMs);
+      return this.readJson<T>(join(dir, candidates[0].file));
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return null;
+      throw error;
+    }
+  }
+
+  private async availablePath(dir: string, name: string): Promise<string> {
+    await mkdir(dir, { recursive: true });
+    const base = join(dir, `${name}.json`);
+    try {
+      await stat(base);
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return base;
+      throw error;
+    }
+    const suffix = new Date().toISOString().replace(/[:.]/g, '-');
+    return join(dir, `${name}_${suffix}.json`);
+  }
+
+  private async writeJson(path: string, value: unknown, overwrite = false): Promise<void> {
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: overwrite ? 'w' : 'wx',
+    });
+  }
+
+  private async readJson<T>(path: string): Promise<T> {
+    return JSON.parse(await readFile(path, 'utf8')) as T;
+  }
+
+  private safe(value: string): string {
+    if (!/^[a-zA-Z0-9._-]+$/.test(value) || value === '.' || value === '..') {
+      throw new Error(`Недопустимое имя файла: ${value}`);
+    }
+    return value;
+  }
+
+  private today(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  private isMissing(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+  }
+
+  private escape(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+}

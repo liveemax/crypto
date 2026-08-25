@@ -1,449 +1,370 @@
-# ТЗ: сервис аналитических агентов на NestJS + Swagger
+# ТЗ: отбор, агенты и рейтинг — шаги 05–15
 
-## КАК ВЫПОЛНЯТЬ ЭТО ЗАДАНИЕ
+Заменяет прежний `docs/tz.md`. Шаги 01–04.5 выполнены, их описание убрано.
 
-**Выполняй ровно один шаг за раз.** После завершения шага:
+Инварианты, ловушки, формат правок и формат ответа — в `CLAUDE.md`. Здесь они
+не повторяются: два источника правды расходятся за один эпик.
 
-1. Убедись, что `npm run build` проходит без ошибок
-2. Кратко перечисли, какие файлы создал и изменил
-3. Выведи чек-лист приёмки этого шага
-4. **Остановись и жди подтверждения.** Не начинай следующий шаг сам
+## Как выполнять
 
-Не забегай вперёд: не создавай заглушки будущих контроллеров, не подключай библиотеки «на будущее», не пиши код агентов раньше их шага. Каждый шаг оставляет систему в рабочем состоянии.
+Один шаг за раз. После шага: `npm run build` чистый, `npm test` зелёный,
+список созданных и изменённых файлов, чек-лист приёмки, **стоп и ожидание
+подтверждения**. Не забегать вперёд.
 
-Если требование шага противоречит уже написанному коду — скажи об этом и предложи решение, не переписывай молча.
-
----
-
-## Что строим
-
-Сервис с набором аналитических агентов по криптоактивам. Единственный интерфейс — **Swagger UI**: пользователь заходит на `/api`, нажимает *Try it out*, вводит тикер, получает JSON. Консольного интерфейса не делаем.
-
-Семь агентов, каждый отвечает за свой срез анализа и вызывается независимо:
-
-| Агент | Тип | Что делает |
-|---|---|---|
-| `screener` | код | Базовая бизнес-эффективность, срезает большинство вселенной |
-| `unlocks` | код | Net Holder Yield: возврат ценности минус разводнение |
-| `value-capture` | LLM | Механизм возврата ценности: fee switch, стейкинг, выкуп |
-| `revenue-quality` | LLM | Выручка с поправкой на стоимость стимулов |
-| `sector-position` | код | Перцентили внутри сектора: лидер / догоняющий / переоценён |
-| `organic` | LLM | Органический / субсидированный / вероятно манипулятивный рост |
-| `critic` | LLM | Попытка опровергнуть тезис, а не подтвердить |
-
-Итог — рейтинг по тирам, а не отсортированный список.
-
-Это исследовательский инструмент: он выдаёт проверяемые данные с источниками и уровнем уверенности, а **не** рекомендации покупать или продавать. Описания в Swagger должны это отражать.
+Шаги 05–11 не требуют API-ключа. Это отбор и кодовые агенты — вся арифметика
+системы. Модель появляется на шаге 12 и работает только по альфе.
 
 ---
 
-## Инварианты — нарушать нельзя ни на одном шаге
+## Что уже построено
 
-1. **LLM не считает числа и не вспоминает факты по памяти.** Вся арифметика — TypeScript. Модель возвращает только категории (zod `enum`) и цитирует переданный ей текст. Нет текста на входе → запись в `missing`, а не догадка.
+Вселенная строится из данных раз в месяц: топ-1300 CoinGecko по
+`price × circulating`, склейка с протоколами, сетями и тремя сводками комиссий
+DeFiLlama по `gecko_id`. Полная пересборка — около 25 запросов.
 
-2. **Метрика без `sourceUrl` и `asOf` обнуляется валидатором.** Это код, а не договорённость с моделью. Именно эта защита отличает аналитику от генератора уверенности.
+Воронка отсева — чистый код, восемь проверок, у каждого отсеянного записан шаг
+и причина. Из 1250 остаётся 678, из них с финансовыми данными ~100.
 
-3. **Снапшоты именуются датой и никогда не перезаписываются.** Сырые ответы API сохраняются на диск до всякой обработки.
+Тиры: `yield` (выручка доходит до держателей), `economics` (выручка есть, до
+держателей не доходит), `pool` (шлак-фильтр пройден, финансового источника
+нет), `rejected`.
 
-4. **Деньги и проценты не считать в float.** `decimal.js` либо целые базисные пункты. Складываются доходности и разводнение — ошибка в третьем знаке переворачивает знак результата.
+Готовые числа в кандидате, все со ссылкой на источник и временем обновления
+источника: `mcapCalcUsd`, `fdvUsd`, `floatPct`, `fdvToMcap`, `turnoverPct`,
+`fees12mUsd`, `revenue12mUsd`, `holdersRevenue12mUsd`, `holderYieldPct`,
+`takeRatePct`, `payoutRatioPct`, `pRev`, `pFees`, `revenuePerTvlPct`, `tvlUsd`,
+`sector`.
 
-5. **Никаких выдуманных или синтетических данных в рабочих путях.** Фикстуры только в `test/`, никогда в `data/`. Синтетическое число, попавшее в рабочий снапшот, неотличимо от настоящего.
-
-6. **При нехватке данных агент возвращает честный отказ**, а не правдоподобный результат: `score: null`, заполненный `missing`, внятный `notes`.
-
----
-
-## Технологии и стиль
-
-NestJS 10+, TypeScript в strict-режиме, `@nestjs/swagger`, `@nestjs/config`, `zod`, `decimal.js`, `@anthropic-ai/sdk`, `jest`. Node 20+.
-
-- Комментарии, `notes`, тексты ошибок и описания в Swagger — **на русском**
-- Имена файлов, классов, полей — английские; поля в camelCase
-- `any` запрещён, кроме приведения `input_schema` для Anthropic SDK
-- Каждый публичный метод сервиса — однострочный JSDoc
-- Секреты только через `.env` + `@nestjs/config`, `.env` в `.gitignore`
+**Агенты эти числа не пересчитывают.** Они берут их из контекста, считают
+производные через `money.ts` и объясняют.
 
 ---
 
-## Целевая структура
+## Главное изменение замысла: три ритма вместо одного
+
+Сейчас `POST /universe/refresh` делает три разные вещи одновременно, поэтому
+подвинуть один порог стоит пяти минут и 25 запросов. Это недоделка, а не
+замысел: факты уже лежат в снимке, фильтровать их можно сколько угодно раз.
+
+| Что | Ритм | Цена | Меняется от |
+|---|---|---|---|
+| **Состав** — кто во вселенной | раз в месяц | ~25 запросов | времени |
+| **Числа** — цены, объёмы, выручка | по требованию | ~9 запросов | времени |
+| **Отбор** — кто интересен | мгновенно | 0 запросов | **вашего мнения** |
+
+Отсюда конвейер:
 
 ```
-src/
-  main.ts
-  app.module.ts
-  health/health.controller.ts
-  config/
-    universe.ts  thresholds.ts  config.controller.ts  config.module.ts
-  core/
-    types.ts                      # Metric, AgentResult, SnapshotRow, AgentContext
-    money.ts                      # обёртки над decimal.js
-    store/store.service.ts        # кэш, снапшоты, результаты
-    validate/validate.service.ts  # обнуление метрик без источника
-    llm/llm.service.ts  llm.mock.ts  system-rules.ts
-    fetch/defillama.service.ts  coingecko.service.ts  snapshot.service.ts
-  agents/
-    agent.interface.ts  base.agent.ts  agents.module.ts  agent-runner.service.ts
-    screener/  unlocks/  value-capture/  revenue-quality/
-    sector-position/  organic/  critic/
-  api/
-    agents.controller.ts  snapshot.controller.ts
-    manual.controller.ts  ranking.controller.ts  dto/
-  ranking/
-    ranking.service.ts  report.service.ts
-data/      # unlocks.json, overrides.json, docs/<TICKER>/, snapshots/, cache/, raw/
-reports/
-test/
+POST /universe/refresh    состав           сеть, раз в месяц
+POST /universe/prices     числа            сеть, по требованию
+POST /universe/screen     отсев шлака      без сети, параметры ваши
+GET  /universe/alpha      лидеры секторов  без сети, параметры ваши
+POST /ranking/run         выводы           агенты по альфе
 ```
+
+Между вторым и третьим шагом проходит граница фактов и мнений.
+
+## Граница гибкости
+
+Отбор крутится свободно — это ваш вопрос к данным, и разные вопросы обязаны
+давать разные ответы. Измерение заморожено — иначе подбором профиля достижим
+любой заранее желаемый вывод, и система превращается в убедительный генератор
+подтверждений собственных ставок.
+
+| Настраивается профилем | Заморожено в коде |
+|---|---|
+| Пороги и состав проверок отсева | Как считаются метрики |
+| Число лидеров на сектор и правила отбора альфы | Валидатор происхождения метрик |
+| Какие агенты запускать | Таблицы очков LLM-категорий |
+| Веса композита и границы тиров | zod-схемы и системные правила модели |
+| Хард-фильтры кодовых агентов | Сбор данных и склейка источников |
 
 ---
 
-## Общие контракты
+## Правки замороженных контрактов — утвердить до шага 05
 
-Создаются на шаге 03, дальше **не меняются**. Все агенты возвращают одну форму.
+**1. `UniverseSnapshot` получает `excludedIds`.** Список исключений сейчас
+живёт только внутри сборки. Без него перефильтровать сохранённый снимок нельзя
+— стейблкоины вернутся.
 
 ```ts
-// src/core/types.ts
-export interface Metric {
-  value: number | string | null;
-  unit: string;
-  sourceUrl: string | null;
-  asOf: string | null;
-  droppedReason?: 'no_source' | 'no_as_of';
-  staleDays?: number;
-}
-
-export interface AgentResult {
-  agent: string;
-  title: string;
-  token: string;
-  sector: string | null;
-  asOf: string;
-  verdict: Record<string, unknown>;
-  score: number | null;          // 0..100, сопоставим внутри сектора
-  scoreRaw?: number;             // до поправки на качество данных
-  metrics: Record<string, Metric>;
-  dataQuality: number;           // 0..1
-  missing: string[];
-  notes: string;
-  validator?: { dropped: string[]; stale: string[] };
-  error?: string;
-}
-
-export interface SnapshotRow {
-  ticker: string;
-  name: string;
-  sector: string;
-  asOf: string;
-  priceUsd: number | null;
-  mcapUsd: number | null;
-  fdvUsd: number | null;
-  vol24hUsd: number | null;
-  circulating: number | null;
-  totalSupply: number | null;
-  revenue1y: number | null;
-  revenue30d: number | null;
-  tvlUsd: number | null;
-  mcapSource: string | null;
-  feesSource: string | null;
-  tvlSource: string | null;
-  errors: string[];
-}
-
-export interface AgentContext {
-  snapshot: SnapshotRow[];
-  docsText?: string;
-  docsSources?: string[];
-  priorResults?: Record<string, AgentResult>;
-  buyback12mUsd?: number;
-  incentives12mUsd?: number;
-  cashDistrib12mUsd?: number;
-  burn12mUsd?: number;
-}
-
-export interface Agent {
-  readonly name: string;
-  readonly title: string;
-  readonly needsLlm: boolean;
-  readonly needs: (keyof SnapshotRow)[];
-  run(token: string, row: SnapshotRow, ctx: AgentContext): Promise<AgentResult>;
+export interface UniverseSnapshot {
+  // ...существующие поля
+  /** Идентификаторы из реестров исключений: нужны для повторного отбора без сети. */
+  excludedIds: string[];
+  /** Профиль, которым считался funnel в момент сборки. */
+  profileId: string;
 }
 ```
 
+**2. `AgentContext` получает кандидата вселенной и профиль.**
+
+```ts
+export interface AgentContext {
+  // ...существующие поля
+  /** Кандидат вселенной со всеми посчитанными метриками и источниками. */
+  candidate?: UniverseCandidate;
+  /** Версия вселенной: перцентили сектора сравнимы только внутри неё. */
+  universeVersion?: string | null;
+  /** Профиль анализа: пороги хард-фильтров берутся отсюда, а не из констант. */
+  profile?: AnalysisProfile;
+}
+```
+
+**3. `THRESHOLDS` и `WEIGHTS` переезжают в профиль.** Константы остаются, но
+становятся полями `DEFAULT_PROFILE` — `GET /config/thresholds` продолжает
+работать и отдаёт значения профиля по умолчанию. Старые веса ссылаются на
+агентов, которых больше нет:
+
+```ts
+weights: {
+  unlocks: 0.35,        // NHY: доход держателя минус разводнение
+  mechanism: 0.25,      // механизм возврата ценности и качество роста
+  screener: 0.20,       // дешевизна относительно собственной выручки
+  sectorPosition: 0.20, // положение среди прямых конкурентов
+}
+```
+
+`critic` в композит не входит: он работает штрафным множителем к итогу, а не
+слагаемым. Усреднять критику с остальным — значит её разбавлять.
+
+**4. `SnapshotRow`** — необязательные поля из `types.patch.ts` применяются
+целиком: `asOfMarket`, `asOfFees`, `asOfTvl`, `mcapCalcUsd`, `revenueBasis`,
+`universeVersion`.
+
 ---
 
-## Карта эндпоинтов
+## Пять агентов вместо семи, два LLM-прохода вместо четырёх
+
+`holdersRevenue12mUsd` из DeFiLlama — это факт: часть выручки, дошедшая до
+держателей через выкуп, стейкинг из комиссий или включённый fee switch. Раньше
+на вопрос «доходит ли ценность до держателя» отвечала модель, читая форум.
+Теперь отвечает число со ссылкой, а модели остаётся то, что числом не берётся:
+каким механизмом и при каких условиях он выключается.
+
+| Было | Стало |
+|---|---|
+| `screener`, `unlocks`, `sector-position` (код) | без изменений, шаги 08, 10, 11 |
+| `value-capture`, `revenue-quality`, `organic` (LLM) | слиты в `mechanism`, шаг 13 |
+| `critic` (LLM) | `critic`, шаг 14 |
+
+Три слитых агента читали один и тот же вход — документацию проекта — и
+отказывали синхронно, когда её нет. Один проход вместо трёх.
+
+`critic` остаётся отдельно принципиально: у него другой вход (собранная
+карточка, а не документы) и другая задача — опровергнуть, а не
+классифицировать. В общем вызове модель критиковала бы собственные категории из
+того же ответа.
+
+---
+
+## Карта оставшихся эндпоинтов
 
 | Метод | Путь | Тег | Шаг |
 |---|---|---|---|
-| GET | `/health` | system | 01 |
-| GET | `/config/universe` | config | 02 |
-| GET | `/config/sectors` | config | 02 |
-| GET | `/config/thresholds` | config | 02 |
-| POST | `/snapshot/refresh` | snapshot | 04 |
-| GET | `/snapshot` | snapshot | 04 |
-| GET | `/snapshot/{token}` | snapshot | 04 |
-| GET | `/agents` | agents | 05 |
-| POST | `/agents/{name}/{token}` | agents | 05 |
-| POST | `/manual/unlocks` | manual | 07 |
-| GET | `/manual/unlocks/{token}` | manual | 07 |
-| DELETE | `/manual/unlocks/{id}` | manual | 07 |
-| POST | `/manual/docs/{token}` | manual | 09 |
-| GET | `/manual/docs/{token}` | manual | 09 |
-| POST | `/manual/overrides/{token}` | manual | 10 |
-| POST | `/ranking/run` | ranking | 14 |
-| GET | `/ranking/latest` | ranking | 14 |
-| GET | `/ranking/report/{date}` | ranking | 14 |
-| POST | `/ranking/sensitivity` | ranking | 14 |
+| POST | `/universe/prices` | universe | 05 |
+| POST | `/universe/screen` | universe | 05 |
+| POST | `/universe/compare` | universe | 05 |
+| GET | `/config/profiles` | config | 05 |
+| GET | `/universe/alpha` | universe | 06 |
+| GET | `/agents` | agents | 07 |
+| POST | `/agents/{name}/{token}` | agents | 07 |
+| POST · GET · DELETE | `/manual/unlocks` | manual | 09 |
+| POST | `/manual/unlocks/import/{token}` | manual | 09 |
+| POST · GET | `/manual/overrides/{token}` | manual | 09 |
+| POST · GET | `/manual/docs/{token}` | manual | 13 |
+| POST | `/ranking/run` | ranking | 15 |
+| GET | `/ranking/latest` | ranking | 15 |
+| GET | `/ranking/report/{date}` | ranking | 15 |
+| POST | `/ranking/sensitivity` | ranking | 15 |
 
-Общие query-параметры агентских эндпоинтов: `mock` (LLM-заглушка, без трат), `offline` (только кэш), `refresh` (принудительно обновить данные).
+Общие query-параметры агентских эндпоинтов: `mock`, `offline`, `refresh`,
+`profileId`.
 
 ---
----
 
-# ШАГ 01 — Скелет и Swagger
+# ШАГ 05 — Профиль анализа и отделение отбора от сборки
 
-**Цель.** Приложение поднимается, Swagger открывается, один эндпоинт отвечает.
+**Цель.** Разные фильтры по одной и той же вселенной, без сети и без
+пересборки.
 
-### Установить
-
-Основное: `@nestjs/common @nestjs/core @nestjs/platform-express @nestjs/swagger @nestjs/config zod decimal.js`
-Dev: `@nestjs/cli @nestjs/testing jest ts-jest @types/node @types/jest supertest`
-
-### src/main.ts
+### `src/core/universe/profile.types.ts`
 
 ```ts
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from './app.module';
+export type NumericField =
+  | 'mcapCalcUsd' | 'fdvUsd' | 'vol24hUsd' | 'turnoverPct' | 'floatPct'
+  | 'fdvToMcap' | 'fees12mUsd' | 'revenue12mUsd' | 'holdersRevenue12mUsd'
+  | 'holderYieldPct' | 'takeRatePct' | 'payoutRatioPct' | 'pRev' | 'pFees'
+  | 'revenuePerTvlPct' | 'tvlUsd';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+export type ScreenRule =
+  | {
+      stage: string;
+      label: string;
+      kind: 'compare';
+      field: NumericField;
+      op: 'gte' | 'lte';
+      value: number;
+      /** null проходит: «неизвестно» не равно «плохо». */
+      nullPolicy: 'pass' | 'fail';
+    }
+  /** Проверки, не выражаемые полем и оператором: множество, коридор, регулярка, флаг. */
+  | { stage: string; label: string; kind: 'excluded' | 'pegged' | 'derivative' | 'healthy' };
 
-  const config = new DocumentBuilder()
-    .setTitle('Crypto Agents')
-    .setDescription(
-      'Исследовательский инструмент. Выдаёт проверяемые данные с источниками и ' +
-      'уровнем уверенности, а не рекомендации покупать или продавать. ' +
-      'Каждое число снабжено ссылкой на источник и датой актуальности.',
-    )
-    .setVersion('1.0')
-    .addTag('system', 'Служебное')
-    .addTag('config', 'Вселенная токенов и настройки')
-    .addTag('snapshot', 'Слой данных')
-    .addTag('agents', 'Агенты — по одному на токен')
-    .addTag('manual', 'Ручные вводы: разлоки, документация, оверрайды')
-    .addTag('ranking', 'Полный прогон и рейтинг')
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document, {
-    swaggerOptions: { tryItOutEnabled: true, persistAuthorization: true },
-  });
-
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-  console.log(`Swagger: http://localhost:${port}/api`);
-}
-bootstrap();
-```
-
-Теги объявляются все сразу, хотя контроллеры под них появятся позже — так порядок разделов в Swagger не будет прыгать.
-
-### Остальное
-
-- `HealthController`: `GET /health` → `{ status: 'ok', time: ISO, version }`
-- `tsconfig`: `strict: true`, `strictNullChecks: true`, `noImplicitAny: true`
-- `.env.example`: `PORT=3000`, `ANTHROPIC_API_KEY=`, `MODEL=claude-sonnet-5`
-- `ConfigModule.forRoot({ isGlobal: true })` в `AppModule`
-- Папки `data/` и `reports/` с `.gitkeep`, содержимое в `.gitignore`
-
-**Приёмка.** `npm run start:dev` поднимается · `/api` открывается с заголовком и описанием · виден раздел **system** · *Try it out* → 200 · `npm run build` чистый · `.env` в `.gitignore`.
-
-**Запрещено.** CLI и `nest-commander`. База данных, ORM, очереди. Заглушки будущих контроллеров. Отключение `strict`.
-
-**СТОП. Жди подтверждения.**
-
----
-
-# ШАГ 02 — Вселенная токенов и пороги
-
-**Цель.** Список анализируемых активов и настройки доступны через API.
-
-### src/config/universe.ts
-
-```ts
-export interface UniverseItem {
-  ticker: string;
-  name: string;
-  sector: string;
-  /** Слаг протокола на defillama.com — часть может быть неверна, проверяется на шаге 04 */
-  defillama: string;
-  /** id монеты на coingecko.com */
-  coingecko: string;
+export interface AlphaConfig {
+  /** Сколько лидеров брать из сектора. */
+  perSector: number;
+  /** Сектор меньше этого размера лидеров не выделяет. */
+  minSectorSize: number;
+  /** Тиры, участвующие в ранжировании. */
+  includeTiers: Tier[];
+  /** Абсолютный порог: лидер обязан быть не только первым, но и приемлемым. */
+  qualify: ScreenRule[];
+  /** По каким метрикам считать перцентили внутри сектора. */
+  rankBy: { field: NumericField; direction: 'higher_better' | 'lower_better' }[];
+  /** Крупные токены без экономики — отдельный список на ручной сбор данных. */
+  manualCandidates: ScreenRule[];
 }
 
-export const UNIVERSE: UniverseItem[] = [
-  { ticker: 'HYPE',   name: 'Hyperliquid', sector: 'perps',   defillama: 'hyperliquid', coingecko: 'hyperliquid' },
-  { ticker: 'AAVE',   name: 'Aave',        sector: 'lending', defillama: 'aave',        coingecko: 'aave' },
-  { ticker: 'MORPHO', name: 'Morpho',      sector: 'lending', defillama: 'morpho',      coingecko: 'morpho' },
-  { ticker: 'SKY',    name: 'Sky',         sector: 'stables', defillama: 'sky-lending', coingecko: 'sky' },
-  { ticker: 'LINK',   name: 'Chainlink',   sector: 'infra',   defillama: 'chainlink',   coingecko: 'chainlink' },
-  { ticker: 'PENDLE', name: 'Pendle',      sector: 'yield',   defillama: 'pendle',      coingecko: 'pendle' },
-  { ticker: 'LDO',    name: 'Lido',        sector: 'lst',     defillama: 'lido',        coingecko: 'lido-dao' },
-  { ticker: 'JTO',    name: 'Jito',        sector: 'lst',     defillama: 'jito',        coingecko: 'jito-governance-token' },
-  { ticker: 'SNX',    name: 'Synthetix',   sector: 'perps',   defillama: 'synthetix',   coingecko: 'havven' },
-  { ticker: 'GMX',    name: 'GMX',         sector: 'perps',   defillama: 'gmx',         coingecko: 'gmx' },
-  { ticker: 'AERO',   name: 'Aerodrome',   sector: 'dex',     defillama: 'aerodrome',   coingecko: 'aerodrome-finance' },
-  { ticker: 'NEAR',   name: 'Near',        sector: 'l1',      defillama: 'near',        coingecko: 'near' },
-  { ticker: 'STRK',   name: 'Starknet',    sector: 'l2',      defillama: 'starknet',    coingecko: 'starknet' },
-];
-
-export function findByTicker(ticker: string): UniverseItem | undefined { /* без учёта регистра */ }
-export function sectors(): string[] { /* уникальные, отсортированные */ }
+export interface AnalysisProfile {
+  id: string;
+  title: string;
+  /** Какую гипотезу проверяет этот набор порогов. Обязательное поле. */
+  rationale: string;
+  screen: ScreenRule[];
+  alpha: AlphaConfig;
+  thresholds: { minMcapUsd: number; minAnnualRevenueUsd: number; maxPRev: number };
+  /** Какие модули запускать. Отсутствующие не участвуют в композите. */
+  agents: string[];
+  weights: Record<string, number>;
+  tierCuts: { a: number; b: number; minDataQuality: number };
+}
 ```
 
-### src/config/thresholds.ts
+Мини-язык запросов сознательно не строится: четыре проверки остаются
+именованными предикатами, потому что выражать регулярку названия через поле и
+оператор — неделя работы и вечная отладка.
 
-```ts
-/** Пороги хард-фильтров скринера */
-export const THRESHOLDS = {
-  minMcapUsd: 50_000_000,
-  minAnnualRevenueUsd: 1_000_000,
-  /** Выше — окупаемость за пределами разумного */
-  maxPRev: 60,
-} as const;
+### `src/config/profiles.ts`
 
-/** Веса композита. Проверяются тестом устойчивости на шаге 14. */
-export const WEIGHTS = {
-  valueCapture: 0.25, revenueQuality: 0.20, unlocks: 0.25,
-  sectorPosition: 0.15, organic: 0.15,
-} as const;
+Встроенные профили — константы в git, под ревью. Эндпоинта записи профилей в
+`data/` не делать: конфиг вне git ломает воспроизводимость ровно тогда, когда
+она нужна. Разовые эксперименты подаются телом запроса.
 
-/** Метрика старше этого числа дней помечается устаревшей */
-export const MAX_STALE_DAYS = 45;
-```
+- **`default`** — повторяет текущее поведение один в один. Приёмка требует,
+  чтобы на нём воспроизвелись те же 678.
+- **`yield-hunter`** — гипотеза «плачу за доходность держателя»:
+  `holderYieldPct ≥ 1`, `payoutRatioPct ≥ 20`, `includeTiers: ['yield']`.
+- **`deep-value`** — гипотеза «плачу за дешевизну»: `pRev ≤ 15`,
+  `takeRatePct ≥ 10`, `floatPct ≥ 30`.
 
-### Эндпоинты (тег `config`)
+Три профиля нужны сразу: один профиль не доказывает, что механизм работает.
 
-`GET /config/universe` · `GET /config/sectors` (с подсчётом проектов) · `GET /config/thresholds`. Для каждого — DTO с `@ApiProperty` и примерами.
+### Правки существующего кода
 
-**Приёмка.** Universe возвращает 13 записей · в `lending` 2 проекта, в `perps` 3, в `lst` 2 · в Swagger видна схема ответа, а не пустой объект.
+`CHECKS` из `universe.filter.ts` переезжают в `DEFAULT_PROFILE.screen`.
+`apply()` принимает профиль третьим аргументом со значением по умолчанию.
+`UniverseSnapshot` получает `excludedIds` и `profileId`.
 
-**Запрещено.** Читать конфиг из YAML/JSON. Эндпоинты записи в конфиг. Добавлять токены сверх списка.
+`getTopMarkets` начинает кэшироваться — сейчас единственный некэшируемый
+источник, из-за чего даже честная пересборка тянет страницы рынка заново.
 
-**СТОП. Жди подтверждения.**
+### Эндпоинты
+
+- `POST /universe/prices` — обновить только числа по составу через
+  `getMarketsByIds` и три сводки комиссий. Сети касается, состав не трогает.
+- `POST /universe/screen` — тело `{ profileId?: string, profile?: AnalysisProfile }`.
+  Читает последний снимок, применяет отбор, возвращает `FunnelReport` и тиры.
+  **В сеть не ходит ни при каких условиях.**
+- `POST /universe/compare` — тело `{ left, right }`. Возвращает: кто прошёл в
+  обоих, кто только слева, кто только справа, как изменились тиры. Это не
+  украшение: если два разумных профиля дают полностью разный состав, значит
+  результат определяется вашим мнением, а не данными.
+- `GET /config/profiles` — список встроенных профилей с `rationale`.
+
+**Приёмка.**
+1. Собрать вселенную один раз. `screen` с `default` → те же 678, что и при
+   сборке.
+2. `screen` с `yield-hunter` → другое число, **`builtAt` снимка не изменился,
+   запросов в сеть ноль**. Проверяется по логам.
+3. `compare` двух профилей возвращает непустые списки расхождений.
+4. Тест: два профиля на одном наборе кандидатов дают разный `passed`, снимок
+   при этом не мутируется.
+
+**Запрещено.** Ходить в сеть из `screen`. Хранить профили вне git. Пускать в
+профиль таблицы очков, схемы и правила валидатора.
+
+**СТОП.**
 
 ---
 
-# ШАГ 03 — Типы, хранилище, валидатор
+# ШАГ 06 — Альфа по секторам
 
-**Цель.** Фундамент без HTTP: контракты, файловое хранилище и главная защита системы.
+**Цель.** Из отобранных выделить лидеров каждого сектора. Сравнение идёт с
+прямыми конкурентами, а не со всем рынком.
 
-### src/core/types.ts
+### Логика
 
-Скопировать целиком из раздела «Общие контракты» выше. Дальше эти типы не меняются.
+Берутся кандидаты тиров из `alpha.includeTiers` (по умолчанию `yield` и
+`economics`) — у тира `pool` нет чисел, ранжировать его не по чему.
 
-### src/core/money.ts
+Внутри каждого сектора считаются перцентили по `alpha.rankBy`. По умолчанию:
+`holderYieldPct`, `revenueSharePct` (доля в выручке сектора) и
+`revenuePerTvlPct` — больше лучше; `pRev` — меньше лучше. `sectorScore` —
+среднее доступных перцентилей.
 
-Обёртки над `decimal.js`: `add`, `sub`, `mul`, `div`, `pctOf(part, whole)`, `round(value, digits)`. Все финансовые расчёты в проекте идут только через них. Возвращают `number` для сериализации, но считают через `Decimal`.
+**Лидером становится тот, кто прошёл `alpha.qualify` и попал в топ
+`perSector`.** Порядок важен: сначала абсолютный порог, потом относительное
+место. Иначе «лидер сектора из двух убыточных» — валидный вывод, а это
+бессмыслица.
 
-### src/core/store/store.service.ts
+`perSector` по умолчанию **5**. Пять, а не два: сектора DeFiLlama дробные, и
+второй-третий в нише часто интереснее первого, у которого вся доля выручки
+пришла от одного продукта.
 
-Файловое хранилище в `data/`. Методы:
+Сектор меньше `minSectorSize` (по умолчанию 3) лидеров не выделяет.
 
-- `cacheGet<T>(ns, key, ttlDays = 1): Promise<T | null>` — просроченный кэш считается отсутствующим
-- `cachePut<T>(ns, key, value): Promise<T>`
-- `saveRaw(source, name, payload)` — сырой ответ API **до** обработки, в `data/raw/<дата>/<source>/`
-- `saveSnapshot(name, rows)` — в `data/snapshots/<дата>_<name>.json`, существующий файл не перезаписывать (добавлять суффикс времени)
-- `loadSnapshot<T>(name, onDate?)` — последний или на конкретную дату
-- `saveResult(agent, token, result)` / `loadResult(agent, token, onDate?)` — в `data/results/<дата>/`
+### Три выхода, а не один
 
-### src/core/validate/validate.service.ts
+- **`leaders`** — альфа: сектор, `sectorScore`, перцентили, `peers`.
+- **`sectorsWithoutComparison`** — секторы из одного-двух участников с
+  перечислением, кто в них. Не врать про лидерство в выборке из одного.
+- **`needsManualData`** — крупные и ликвидные токены тира `pool`, прошедшие
+  `alpha.manualCandidates`. Рабочий список: по ним нужна документация или
+  другой источник, и без него система про них ничего не скажет.
 
-**Это главная защита системы.** Метод `validate(result: AgentResult, maxStaleDays = MAX_STALE_DAYS): AgentResult`:
+### Эндпоинт
 
-Для каждой метрики:
-- `value === null` → в `missing`, оставить как есть
-- нет `sourceUrl` → обнулить `value`, `droppedReason: 'no_source'`, запись в `validator.dropped`, добавить в `missing`
-- нет `asOf` → то же с `droppedReason: 'no_as_of'`
-- `asOf` старше `maxStaleDays` → оставить значение, проставить `staleDays`, запись в `validator.stale`
+`GET /universe/alpha?profileId=default` — без сети, читает снимок.
 
-Затем: `dataQuality = доля метрик с непустым value`; если есть устаревшие — умножить на `0.85`. Вернуть результат с очищенными метриками, отсортированным уникальным `missing` и заполненным `validator`.
+Ожидаемый объём: из ~100 кандидатов с экономикой примерно 60–80 лидеров.
+**Скажу прямо: при пяти на сектор и дробных секторах DeFiLlama альфа отсеет
+немного** — основной отсев уже сделан тем, что у токена вообще есть финансовые
+данные. Вклад альфы не в сокращении числа, а в том, что дальше агенты идут по
+лидерам ниш, а не по общей куче, и что `needsManualData` показывает, где
+система слепа.
 
-Плюс хелпер-конструктор:
+Часть работы `sector-position` (шаг 11) переезжает сюда. Как агент он
+останется, но будет объяснять позицию, а не вычислять её.
 
-```ts
-export function metric(
-  value: number | string | null,
-  sourceUrl: string | null,
-  asOf: string | null,
-  unit = '',
-): Metric { return { value, unit, sourceUrl, asOf }; }
-```
+**Приёмка.** `GET /universe/alpha` → в `leaders` не больше пяти на сектор ·
+односоставные секторы в `sectorsWithoutComparison`, а не в лидерах ·
+`needsManualData` непуст и в нём узнаваемые крупные токены · смена `perSector`
+в профиле меняет выдачу без пересборки.
 
-Метрики в проекте создаются **только** через него.
+**Запрещено.** Выделять лидера в секторе меньше `minSectorSize`. Ранжировать
+тир `pool`. Пропускать `qualify` ради заполнения топ-5.
 
-### Тесты (обязательно, `test/validate.service.spec.ts`)
-
-1. Метрика со значением `45_000_000` и `sourceUrl: null` → на выходе `value === null`, есть `droppedReason: 'no_source'`, поле попало в `missing`, `dataQuality` упал
-2. Метрика с `asOf` восьмимесячной давности → значение сохранено, `staleDays` проставлен, `dataQuality` умножен на 0.85
-3. Все метрики валидны → `dataQuality === 1`, `validator.dropped` пуст
-
-**Приёмка.** `npm test` — три теста зелёные. Без этого дальше не идти: если валидатор не работает, вся система превращается в генератор уверенности.
-
-**Запрещено.** HTTP-эндпоинты на этом шаге. Прямые арифметические операции с деньгами мимо `money.ts`. Изменение контрактов из `types.ts`.
-
-**СТОП. Жди подтверждения.**
-
----
-
-# ШАГ 04 — Слой данных
-
-**Цель.** Реальные данные приходят из внешних API и видны в Swagger.
-
-### Сервисы
-
-`DefillamaService`: `getFees(slug)` → `https://api.llama.fi/summary/fees/{slug}?dataType=dailyRevenue`, берёт `total24h`, `total30d`, `total1y`. `getTvl(slug)` → `https://api.llama.fi/protocol/{slug}`, из ответа удалить `chainTvls` (он огромный), взять текущий общий TVL.
-
-`CoingeckoService`: `getMarket(id)` → `https://api.coingecko.com/api/v3/coins/{id}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false`. Из `market_data` взять цену, капитализацию, FDV, объём, circulating и total supply.
-
-Оба сервиса обязаны:
-- сохранять сырой ответ через `store.saveRaw` **до** обработки
-- кэшировать результат на сутки
-- ретраить с экспоненциальной задержкой, на HTTP 429 ждать дольше
-- выдерживать паузу ~1.2 с между запросами (бесплатный тариф CoinGecko жёсткий)
-- при ошибке не бросать наверх, а возвращать `null` — сбой по одному токену не должен ронять весь снапшот
-
-> Эндпоинты могли измениться. Если ответ приходит пустым или в другой форме — не подгоняй парсинг вслепую, сообщи об этом и покажи фактическую структуру ответа.
-
-`SnapshotService`:
-- `build(tickers?: string[]): Promise<SnapshotRow[]>` — проход по вселенной, сборка строк, ошибки складывать в `row.errors`, результат в `store.saveSnapshot('universe', rows)`
-- `getRow(ticker, opts): Promise<SnapshotRow>` — из последнего снапшота; если строки нет и не `offline` — точечно дотянуть; если `offline` — понятная 404
-- `buildContext(ticker, opts): Promise<AgentContext>` — пока только `{ snapshot }`, остальные поля добавятся на шагах 07/09/10
-
-### Эндпоинты (тег `snapshot`)
-
-- `POST /snapshot/refresh` — тело `{ tickers?: string[] }`, пустое = вся вселенная. Ответ: сколько строк собрано, сколько с ошибками, список ошибок
-- `GET /snapshot` — последний снапшот
-- `GET /snapshot/{token}` — одна строка
-
-**Приёмка.** `POST /snapshot/refresh` с `{"tickers":["AAVE"]}` → непустые `mcapUsd` и `revenue1y`, рядом заполнены `mcapSource` и `feesSource`. **Откройте эти ссылки в браузере и сверьте порядок величины руками.** Затем полный refresh: посмотрите, у скольких токенов `errors` непустой — это неверные слаги, зафиксируйте их список.
-
-> Здесь уйдёт больше всего времени. Это нормально: слой данных — 60–70% работы такой системы. Если `revenue1y` пустой у половины токенов, чините слаги сейчас, а не на десятом шаге.
-
-**Запрещено.** Подставлять значения по умолчанию вместо отсутствующих данных. Придумывать числа при ошибке API. Ходить в сеть при `offline: true`.
-
-**СТОП. Жди подтверждения.**
+**СТОП.**
 
 ---
 
-# ШАГ 05 — Каркас агентов и контроллер
+# ШАГ 07 — Каркас агентов и контроллер
 
-**Цель.** Механика, в которую дальше вставляются агенты по одному. Самих агентов ещё нет.
+**Цель.** Механика, в которую дальше вставляются агенты по одному. Самих
+агентов ещё нет.
 
-### src/agents/base.agent.ts
+### `src/agents/base.agent.ts`
 
 ```ts
 @Injectable()
@@ -495,156 +416,226 @@ export abstract class BaseAgent implements Agent {
 }
 ```
 
-### Регистрация через multi-provider
+### Регистрация и кэш
+
+`AGENT = Symbol('AGENT')`, multi-provider, `AgentsModule` импортирует
+`CoreModule`. `AgentRunnerService` с `@Inject(AGENT) agents: Agent[]`: `list()`
+и `byName(name)` — при отсутствии `NotFoundException` с русским текстом. Массив
+пуст: обеспечить корректную работу с пустым multi-provider.
+
+**Ключ кэша результата включает хеш профиля для кодовых агентов:** их балл
+зависит от порогов. Для LLM-агентов профиль в ключ не входит — они от него не
+зависят, и именно это делает пять профилей почти бесплатными.
+
+### DTO и контроллер
+
+`MetricDto`, `AgentResultDto` с примерами.
 
 ```ts
-export const AGENT = Symbol('AGENT');
-
-@Module({
-  imports: [CoreModule],
-  providers: [AgentRunnerService],   // сюда шаг за шагом добавляются агенты
-  exports: [AgentRunnerService],
-})
-export class AgentsModule {}
+@ApiParam({ name: 'name', enum: ['screener','unlocks','sector-position','mechanism','critic'] })
 ```
 
-`AgentRunnerService` с `@Inject(AGENT) private readonly agents: Agent[]`: методы `list()` и `byName(name)` (при отсутствии — `NotFoundException` с понятным текстом на русском).
+`enum` даёт в Swagger выпадающий список — ключевой элемент интерфейса.
+`AgentsController.run`: `snapshots.getRow` → `snapshots.buildContext` →
+`runner.byName(name).run(...)`. Query-параметр `profileId` прокидывается в
+контекст.
 
-Массив агентов пока пуст — при пустом multi-provider Nest может ругаться, обеспечь корректную работу с пустым списком.
+**Приёмка.** `GET /agents` возвращает пустой массив без ошибки · выпадающий
+список из пяти агентов виден · несуществующий агент → 404 с русским текстом ·
+в схеме ответа видна структура `AgentResultDto`.
 
-### DTO для Swagger
+**Запрещено.** Писать логику агентов. Хардкодить список агентов мимо DI.
 
-`MetricDto` и `AgentResultDto` с `@ApiProperty` и примерами: `value` (nullable, пример `1240000000`), `unit` (`'USD'`), `sourceUrl` (`'https://defillama.com/protocol/aave'`), `asOf`, `droppedReason` (enum), `score` (nullable, 0..100), `dataQuality` (0..1, описание «доля метрик с непустым значением и источником»), `missing`, `notes`, `verdict`.
-
-### src/api/agents.controller.ts
-
-```ts
-@ApiTags('agents')
-@Controller('agents')
-export class AgentsController {
-  @Get()
-  @ApiOperation({ summary: 'Список подключённых агентов' })
-  list() { /* runner.list() */ }
-
-  @Post(':name/:token')
-  @ApiOperation({ summary: 'Запустить агента по токену' })
-  @ApiParam({ name: 'name', enum: ['screener','unlocks','value-capture',
-    'revenue-quality','sector-position','organic','critic'] })
-  @ApiParam({ name: 'token', example: 'AAVE' })
-  @ApiQuery({ name: 'mock', required: false, type: Boolean,
-    description: 'LLM-заглушка: без API-ключа и без трат' })
-  @ApiQuery({ name: 'offline', required: false, type: Boolean,
-    description: 'Только кэш, в сеть не ходить' })
-  @ApiQuery({ name: 'refresh', required: false, type: Boolean })
-  @ApiOkResponse({ type: AgentResultDto })
-  async run(/* ... */) { /* getRow → buildContext → runner.byName(name).run(...) */ }
-}
-```
-
-`enum` в `@ApiParam` даёт в Swagger **выпадающий список агентов** — это ключевой элемент интерфейса. Имена агентов в URL пишутся через дефис (`value-capture`), в коде — camelCase.
-
-**Приёмка.** `GET /agents` возвращает пустой массив без ошибки · `POST /agents/{name}/{token}` виден в Swagger с выпадающим списком · вызов несуществующего агента → 404 с русским текстом · в схеме ответа видна структура `AgentResultDto`.
-
-**Запрещено.** Писать логику агентов. Хардкодить список агентов в контроллере мимо DI — он берётся из `runner.list()`.
-
-**СТОП. Жди подтверждения.**
+**СТОП.**
 
 ---
 
-# ШАГ 06 — Агент screener
+# ШАГ 08 — Агент screener (код)
 
-**Цель.** Первый рабочий агент. LLM не нужен.
+**Цель.** Дешевизна относительно собственной выручки и базовые хард-фильтры.
 
-Четыре базовые проверки: есть ли выручка → достаточна ли она относительно капитализации → в разумных ли пределах P/Rev → проходит ли капитализация минимальный порог.
+Числа берутся из `ctx.candidate`, а не считаются заново. Основание расчёта
+выручки — `candidate.revenueBasis`, оно пишется в `verdict.revenueBasis`:
+run-rate и факт за год не одно и то же.
 
-### Логика
+Проверки против `ctx.profile.thresholds`: `hasRevenue`, `revenueAboveMin`,
+`mcapAboveMin`, `pRevSane`. Все пройдены → `verdict.passed = true`, иначе
+`failedChecks` со списком причин на русском.
 
-Выручка за 12 месяцев: `revenue1y`, при его отсутствии — `revenue30d × 12.17` (run-rate). Основание расчёта записать в `verdict.revenueBasis` — это важно, run-rate и факт не одно и то же.
+Балл: `100 − 100 × (pRev / maxPRev)`, зажать в 0..100. Нет выручки → балл
+`null`, а не ноль: отсутствие данных и дорогая оценка — разные вещи.
 
-Считать `pRev = mcapUsd / revenue12m` и `fdvRev = fdvUsd / revenue12m`.
+В `verdict` дополнительно `takeRatePct` с пояснением: протокол, собирающий
+500 млн комиссий и оставляющий себе 2%, — это бизнес поставщиков капитала, а не
+токена.
 
-Проверки против `THRESHOLDS`: `hasRevenue`, `revenueAboveMin`, `mcapAboveMin`, `pRevSane`. Все пройдены → `verdict.passed = true`. Иначе `failedChecks` со списком причин на русском.
-
-Балл: `100 − 100 × (pRev / maxPRev)`, зажать в 0..100. Нет выручки → 0.
-
-Метрики (все через `metric()`, с источниками из строки снапшота): `mcapUsd`, `fdvUsd`, `revenue12mUsd`, `pRev`, `fdvRev`, `tvlUsd`, `vol24hUsd`.
-
+Метрики через `metric()` с источниками из кандидата: `mcapUsd`, `fdvUsd`,
+`revenue12mUsd`, `fees12mUsd`, `pRev`, `fdvRev`, `takeRatePct`, `tvlUsd`.
 `needs = ['mcapUsd']`.
 
-Зарегистрировать в `AgentsModule` как multi-provider.
+**Приёмка.**
+1. `POST /agents/screener/AAVE` → `score` число, `metrics.pRev.value` заполнен,
+   у каждой метрики непустой `sourceUrl`.
+2. Тот же токен с `profileId=deep-value` → балл другой, и видно почему.
+3. Токен тира `pool` → `score: null`, внятный `missing`, без выдуманных чисел.
+4. **Негативный тест, обязательный.** Подать в тесте строку с
+   `feesSource: null`. Ожидается: метрики выручки и P/Rev обнулены с
+   `droppedReason: 'no_source'`, `dataQuality` упал, `score` уменьшился, поля
+   попали в `missing`. Не проходит — валидатор не подключён к каркасу, дальше
+   не идти.
 
-### Приёмка
+**Запрещено.** Дефолты вместо отсутствующей выручки. Пересчитывать то, что уже
+посчитано во вселенной. Брать пороги из констант мимо профиля. Вызывать LLM.
 
-1. `POST /agents/screener/AAVE` → `score` — число, `metrics.pRev.value` заполнен, у каждой метрики непустой `sourceUrl`
-2. `POST /agents/screener/MORPHO` → если P/Rev высокий, `verdict.passed = false` и в `failedChecks` внятная причина
-3. `GET /agents` → агент появился в списке
-
-**4. Негативный тест — обязательный.** Временно (в тесте, не в рабочих данных) подать строку снапшота с `feesSource: null`. Ожидается: метрики выручки и P/Rev обнулены с `droppedReason: 'no_source'`, `dataQuality` упал, `score` уменьшился относительно полного варианта, поля попали в `missing`.
-
-**Если негативный тест не проходит — валидатор не подключён к каркасу. Не идти дальше, чинить.**
-
-**Запрещено.** Подставлять дефолты вместо отсутствующей выручки. Считать P/Rev в обычном float мимо `money.ts`. Вызывать LLM.
-
-**СТОП. Жди подтверждения.**
+**СТОП.**
 
 ---
 
-# ШАГ 07 — Агент unlocks и ввод разлоков
+# ШАГ 09 — Ручные вводы: разлоки и оверрайды
 
-**Цель.** Net Holder Yield — самый ценный показатель системы. Именно он ломает большинство красивых историй: выкуп 10% при разводнении 20% даёт структурный минус, а не доходность 10%.
+**Цель.** Данные, которых нет ни в одном бесплатном API, вводятся руками и
+только с источником.
+
+### Разлоки
+
+`data/unlocks.json`, записи `{ id, ticker, date, tokens, category, sourceUrl, createdAt }`.
+
+- `POST /manual/unlocks` — **`sourceUrl` обязателен и валидируется как URL.**
+  `category` — enum: `team`, `investors`, `community`, `ecosystem`, `other`.
+- `GET /manual/unlocks/{token}` · `DELETE /manual/unlocks/{id}`
+- `POST /manual/unlocks/import/{token}` — попытка предзаполнить календарь из
+  `https://api.llama.fi/emissions`.
+
+> Ответ `/emissions` не проверен. Сначала посмотреть фактическую структуру и
+> показать её, потом писать парсинг. Не сошлось — эндпоинт возвращает понятную
+> ошибку, календарь заполняется руками. Импортированные записи помечаются
+> `sourceUrl` на страницу DeFiLlama, а не выдаются за ручной ввод.
+
+### Оверрайды
+
+`data/overrides.json`. `POST /manual/overrides/{token}` — необязательные
+`incentives12mUsd`, `buyback12mUsd`, `cashDistrib12mUsd`, `burn12mUsd` и
+**обязательный `sourceUrl`**. `GET /manual/overrides/{token}`.
+
+Главный — `incentives12mUsd`: стоимость раздаваемых токенов. Её нет ни в
+CoinGecko, ни в сводках DeFiLlama, а без неё «выручка 8 млн» и «выручка 8 млн
+при 12 млн стимулов» выглядят одинаково.
+
+`buyback12mUsd` и `cashDistrib12mUsd` в норме уже покрыты
+`holdersRevenue12mUsd`. Оверрайд их **не заменяет молча**: если оба источника
+дают число и они расходятся больше чем вдвое, агент пишет об этом в `notes` и
+берёт данные API.
+
+`buildContext` дополнить: подхватывать разлоки и оверрайды.
+
+**Приёмка.** `POST /manual/unlocks` без `sourceUrl` → 400 · с корректным телом
+→ 201 · `POST /manual/overrides` без `sourceUrl` → 400 · `buildContext` отдаёт
+введённое в контексте.
+
+**Запрещено.** Принимать записи без источника. Тихо предпочитать ручной ввод
+данным API.
+
+**СТОП.**
+
+---
+
+# ШАГ 10 — Агент unlocks (код)
+
+**Цель.** Net Holder Yield — главное число системы. Оно ломает большинство
+красивых историй: доходность 5% при разводнении 20% это структурный минус.
 
 ```
-NHY = cashYield + buybackYield + burnYield − dilution12m
+NHY = holderYieldPct − dilution12mPct
 ```
 
-### Хранение разлоков
+`holderYieldPct` берётся из кандидата — это `holdersRevenue12mUsd` к
+капитализации, число со ссылкой на источник. Раньше эта половина формулы
+собиралась из оверрайдов; теперь оверрайды только уточняют её.
 
-Файл `data/unlocks.json`, массив записей: `{ id, ticker, date, tokens, category, sourceUrl, createdAt }`.
+### Разводнение
 
-Эндпоинты (тег `manual`):
-- `POST /manual/unlocks` — тело `{ ticker, date, tokens, category, sourceUrl }`. **`sourceUrl` обязателен и валидируется как URL** — запись без источника принимать нельзя. `category` — enum: `team`, `investors`, `community`, `ecosystem`, `other`
-- `GET /manual/unlocks/{token}` — что уже введено
-- `DELETE /manual/unlocks/{id}`
+Суммировать разлоки на горизонтах 30 / 90 / 365 дней вперёд, посчитать долю от
+`circulating` и стоимость в USD по текущей цене. `dilution12m` — процент на
+365 дней.
 
-### Логика агента
+**Стоимость ближайшего разлока в дневных объёмах:** `usdРазлока / vol24hUsd`.
+Разлок на 3 дневных объёма и на 30 — принципиально разные события, поле
+обязательно.
 
-Из контекста берутся (могут отсутствовать): `buyback12mUsd`, `cashDistrib12mUsd`, `burn12mUsd`. Каждый превращается в доходность как процент от капитализации.
+### Балл и вердикт
 
-Разводнение: суммировать разлоки на горизонтах 30 / 90 / 365 дней вперёд от сегодня, посчитать долю от `circulating` и стоимость в USD по текущей цене. `dilution12m` — процент на 365 дней.
+`NHY ≥ 5%` → 90+; `0..5%` → `50 + nhy × 8`; отрицательный → `50 + nhy × 2.5`,
+не ниже 0.
 
-**Стоимость ближайшего разлока в дневных объёмах**: `usdРазлока / vol24hUsd`. Разлок на 3 дневных объёма и на 30 — принципиально разные события, это поле обязательно.
+`verdict.dilutionRisk`: `низкий` (<5%), `средний` (5–15%), `высокий` (>15%),
+`неизвестен`. `verdict.hardFilterFail = true` при отрицательном NHY.
 
-Балл: NHY ≥ 5% → 90+; 0..5% → `50 + nhy × 8`; отрицательный → `50 + nhy × 2.5`, не ниже 0.
-
-`verdict.dilutionRisk`: `низкий` (<5%), `средний` (5–15%), `высокий` (>15%), `неизвестен`.
-
-`verdict.hardFilterFail = true`, если NHY отрицательный.
+В `verdict` также `floatPct` и `fdvToMcap`: низкий float — то же разводнение,
+только ещё не оформленное календарём.
 
 ### Честность при неполных данных — обязательна
 
-- Разводнение неизвестно → в `notes`: «разводнение неизвестно, NHY завышен»
-- Возврат ценности неизвестен → «возврат ценности неизвестен, NHY занижен»
-- Календарь пуст → `missing: ['нет данных о разлоках для <TOKEN>']`
+- Календарь пуст → `missing: ['нет данных о разлоках для <TOKEN>']`, в `notes`
+  «разводнение неизвестно, NHY завышен».
+- `holdersRevenue12mUsd` пуст → «возврат ценности неизвестен, NHY занижен».
+- Оба пусты → `score: null`.
 
-Молча выдать число нельзя ни в одном из этих случаев.
+Вся арифметика через `money.ts`: складываются проценты и вычитается
+разводнение, ошибка float переворачивает знак на пограничном активе.
 
-### Арифметика
+**Приёмка.** `POST /agents/unlocks/HYPE` → в `verdict` есть `dilution12mPct`,
+`nextUnlock.costInDailyVolumes`, `netHolderYieldPct` · пустой календарь →
+честная пометка, а не число · отрицательный NHY → `hardFilterFail: true` ·
+токен тира `economics` с нулевым `holdersRevenue` → NHY ≤ 0, и это видно в
+`notes`.
 
-Все расчёты через `money.ts` / `decimal.js`. Здесь складываются проценты и вычитается разводнение — накопленная ошибка float может перевернуть знак NHY на пограничном активе.
+**Запрещено.** Считать NHY в float. Выдавать число без пометки о том, какие
+компоненты неизвестны.
 
-**Приёмка.** `POST /manual/unlocks` без `sourceUrl` → 400 · с корректным телом → 201 · `POST /agents/unlocks/HYPE` → в `verdict` появились `dilution12mPct`, `nextUnlock.costInDailyVolumes`, `netHolderYieldPct` · при пустом календаре агент возвращает результат с честной пометкой о неполноте, а не выдуманное число · при отрицательном NHY → `hardFilterFail: true`.
-
-**Запрещено.** Принимать разлоки без источника. Считать NHY в float. Выдавать число без пометки о том, какие компоненты неизвестны.
-
-**СТОП. Жди подтверждения.**
+**СТОП.**
 
 ---
 
-# ШАГ 08 — LLM-сервис со строгой схемой
+# ШАГ 11 — Агент sector-position (код)
 
-**Цель.** Единственный способ получить ответ модели — со строгой zod-схемой и рантайм-валидацией. Агентов на этом шаге не пишем.
+**Цель.** Объяснить положение среди прямых конкурентов. Перцентили посчитаны на
+шаге 06 — агент их интерпретирует, а не вычисляет заново.
 
-### src/core/llm/system-rules.ts
+Сектор берётся из `candidate.sector`. Конкуренты — участники того же сектора
+**той же версии вселенной** из тиров профиля.
+
+**Конкурентов меньше `alpha.minSectorSize` — честный отказ:** `score: null`,
+`missing: ['в секторе <X> менее N проектов с финансовыми данными']`, в `notes`
+— какие секторы рядом и сколько в них участников.
+
+### Классификация `verdict.role`
+
+- **лидер сектора** — доля выручки ≥ 40% и перцентиль эффективности ≥ 60
+- **переоценён относительно конкурентов** — перцентиль дешевизны < 30 и
+  перцентиль доли < 50
+- **догоняющий** — перцентиль эффективности ≥ 50
+- **аутсайдер** — остальное
+
+`verdict.peers` — с кем шло сравнение. `verdict.universeVersion` и
+`verdict.profileId` — иначе результат непроверяем и несравним между прогонами.
+
+**Приёмка.** Два токена одного сектора → роли разные, в `peers` указан
+конкурент · токен односоставного сектора → честный отказ с перечислением
+соседних секторов · `universeVersion` и `profileId` заполнены.
+
+**Запрещено.** Сравнивать проекты из разных секторов и разных версий вселенной.
+Выдавать балл при размере сектора ниже порога профиля. Вызывать LLM.
+
+**СТОП.**
+
+---
+
+# ШАГ 12 — LLM-сервис со строгой схемой
+
+**Цель.** Единственный способ получить ответ модели — со строгой zod-схемой и
+рантайм-валидацией. Агентов на этом шаге не пишем.
+
+### `src/core/llm/system-rules.ts`
 
 ```ts
 export const SYSTEM_RULES = `Ты — узкоспециализированный агент криптоаналитической системы.
@@ -663,7 +654,7 @@ export const SYSTEM_RULES = `Ты — узкоспециализированны
    формулировки в тексте.`;
 ```
 
-### src/core/llm/llm.service.ts
+### `src/core/llm/llm.service.ts`
 
 ```ts
 async structured<T>(
@@ -674,224 +665,184 @@ async structured<T>(
 ): Promise<T>
 ```
 
-Реализация: `messages.create` с `tools: [{ name: toolName, input_schema: zodToJsonSchema(schema) }]` и `tool_choice: { type: 'tool', name: toolName }`, система — `SYSTEM_RULES`. Из ответа взять блок `tool_use`, прогнать через **`schema.parse()`** и вернуть.
+`messages.create` с `tools: [{ name: toolName, input_schema: <json schema> }]` и
+`tool_choice: { type: 'tool', name: toolName }`, система — `SYSTEM_RULES`. Из
+ответа взять блок `tool_use`, прогнать через **`schema.parse()`** и вернуть.
 
-`schema.parse()` обязателен: он гарантирует, что дальше по пайплайну идут только валидные данные. Модель вернула не то — падаем сразу и понятно, а не через три шага странным образом.
+`schema.parse()` обязателен: он гарантирует, что дальше по пайплайну идут только
+валидные данные. Модель вернула не то — падаем сразу и понятно.
 
-Ретраи с экспоненциальной задержкой. Кэширование по `cacheKey` через `StoreService` (кэш возвращать тоже через `parse`).
+**У нас zod v4.** `zod-to-json-schema` из v3 не подходит, в v4 есть встроенный
+`z.toJSONSchema`. Проверить фактический вывод на совместимость с форматом
+`input_schema` Anthropic и показать результат, а не подгонять вслепую.
 
-Модель из `process.env.MODEL`, ключ из `ANTHROPIC_API_KEY`. Клиент создавать лениво: без ключа сервис должен собираться, а падать только при реальном вызове, с понятным сообщением «нет ANTHROPIC_API_KEY, используйте mock=true».
+Ретраи с экспоненциальной задержкой. Кэш по `cacheKey` через `StoreService`,
+кэш тоже возвращать через `parse`. Модель из `process.env.MODEL`, ключ из
+`ANTHROPIC_API_KEY`. Клиент создавать лениво: без ключа сервис собирается, а
+падает только при вызове, с текстом «нет ANTHROPIC_API_KEY, используйте
+mock=true».
 
-### src/core/llm/llm.mock.ts
+### `src/core/llm/llm.mock.ts`
 
-`LlmMockService` с тем же интерфейсом: генерирует объект по zod-схеме (первое значение для enum, `null` для чисел, `'[mock]'` для строк, `[]` для массивов, `false` для boolean). Результат должен проходить `schema.parse()`.
-
-Подключается по флагу `mock: true` в query. Благодаря ему любой LLM-агент отлаживается без ключа и без трат.
+`LlmMockService` с тем же интерфейсом: генерирует объект по zod-схеме (первое
+значение для enum, `null` для чисел, `'[mock]'` для строк, `[]` для массивов,
+`false` для boolean). Результат обязан проходить `schema.parse()`.
 
 ### Проверка
 
-Временный `POST /debug/llm-ping` со схемой `{ ok: boolean, echo: string }`. **После проверки эндпоинт удалить.**
+Временный `POST /debug/llm-ping` со схемой `{ ok: boolean, echo: string }`.
+**После проверки эндпоинт удалить.**
 
-> Формат tool use и имена моделей могли измениться. Свериться с https://docs.claude.com/en/docs/build-with-claude/tool-use перед реализацией. Если формат отличается — сообщить, а не подгонять вслепую.
+> Формат tool use и имена моделей могли измениться. Свериться с
+> https://docs.claude.com/en/docs/build-with-claude/tool-use перед реализацией.
 
-**Приёмка.** С реальным ключом `/debug/llm-ping` возвращает валидный объект · с `mock: true` возвращает валидную пустую структуру · без ключа и без mock — понятная ошибка, а не стектрейс · подмена схемы на несовместимую → выброс из `parse()`, а не тихий проброс.
+**Приёмка.** С ключом `/debug/llm-ping` возвращает валидный объект · с
+`mock: true` — валидную пустую структуру · без ключа и без mock — понятная
+ошибка, а не стектрейс · подмена схемы на несовместимую → выброс из `parse()`.
 
-**Запрещено.** Просить у модели свободный текст и парсить его. Пропускать `schema.parse()`. Логировать ключ. Вызывать модель без `SYSTEM_RULES`.
+**Запрещено.** Просить у модели свободный текст и парсить его. Пропускать
+`schema.parse()`. Логировать ключ. Вызывать модель без `SYSTEM_RULES`.
 
-**СТОП. Жди подтверждения.**
+**СТОП.**
 
 ---
 
-# ШАГ 09 — Агент value-capture
+# ШАГ 13 — Агент mechanism (LLM, проход первый) и загрузка документации
 
-**Цель.** Первый LLM-агент. Отвечает на вопрос, ради которого система существует: проект может быть успешным, а токен бесполезным.
+**Цель.** Ответить на то, что числами не берётся: каким механизмом ценность
+доходит до держателя, при каких условиях он выключается и на чём держится рост.
 
 ### Загрузка документации
 
-`POST /manual/docs/{token}` — тело `{ url, text }`, оба обязательны, `url` валидируется. Сохранять в `data/docs/<TICKER>/`, первой строкой файла `URL: <url>`.
-`GET /manual/docs/{token}` — список загруженных источников.
+`POST /manual/docs/{token}` — тело `{ url, text }`, оба обязательны, `url`
+валидируется. Сохранять в `data/docs/<TICKER>/`, первой строкой файла
+`URL: <url>`. `GET /manual/docs/{token}` — список источников. `buildContext`
+дополнить: `ctx.docsText`, `ctx.docsSources`.
 
-`SnapshotService.buildContext` дополнить: подхватывать документацию в `ctx.docsText` и `ctx.docsSources`.
+Список `needsManualData` из шага 06 — рабочая очередь для этого эндпоинта.
 
 ### Схема (zod)
 
 ```ts
-export const ValueCaptureSchema = z.object({
+export const MechanismSchema = z.object({
+  // возврат ценности
   feeSwitchStatus: z.enum(['active_paid','approved_not_live','discussed','none','unknown'])
     .describe('active_paid — деньги фактически идут держателям, а не просто проголосованы'),
-  stakingSource: z.enum(['fees','emissions','mixed','no_staking','unknown'])
+  valueRoute: z.enum(['buyback','staking_from_fees','staking_from_emissions','treasury_only','none','unknown'])
     .describe('стейкинг из комиссий создаёт ценность, из новой эмиссии — нет'),
   buybackSource: z.enum(['revenue','treasury','none','unknown'])
     .describe('выкуп из выручки устойчив, из казны конечен'),
   tokenRequiredForProduct: z.enum(['required','optional_discount','governance_only','unknown']),
-  valueFlowsToHolder: z.boolean(),
   conditionsOrGates: z.array(z.string())
-    .describe('условия, при которых механизм не работает, например порог цены базового актива'),
-  evidence: z.array(z.object({ claim: z.string(), url: z.string().url() })),
-  missing: z.array(z.string()),
-  confidence: z.number().min(0).max(1),
-});
-```
+    .describe('условия, при которых механизм перестаёт работать'),
 
-Все поля — категории. Ни одного числового поля, которое модель могла бы «посчитать».
-
-### Балл считается кодом
-
-Модель балл не ставит. Таблицы очков:
-- feeSwitch: `active_paid` 40, `approved_not_live` 15, `discussed` 5, остальное 0
-- staking: `fees` 25, `mixed` 12, `no_staking` 5, `emissions` 0, `unknown` 0
-- buyback: `revenue` 25, `treasury` 8, остальное 0
-- tokenRequired: `required` 10, `optional_discount` 5, остальное 0
-
-Сумма умножается на `(0.5 + 0.5 × confidence)`.
-
-### Хард-фильтр
-
-`verdict.hardFilterFail = true`, если одновременно: feeSwitch в (`none`, `unknown`) И buyback в (`none`, `unknown`) И staking в (`emissions`, `no_staking`, `unknown`) И tokenRequired в (`governance_only`, `unknown`). Формулировка в `notes`: «Связь "успех протокола → токен" не обнаружена».
-
-### Поведение без документации
-
-`score: null`, `missing: ['нет документации в data/docs/<TOKEN>/']`, в `notes` — инструкция, как загрузить. **Ни при каких условиях не отвечать по памяти модели.**
-
-### Промпт
-
-Передать текст документации (обрезать до разумного размера) и явно перечислить различия, которые нужно поймать: проголосован ≠ выплачивается; стейкинг из комиссий ≠ из эмиссии; выкуп из выручки ≠ из казны; условия выключения механизма. Завершить требованием отвечать только по переданному тексту.
-
-**Приёмка.** `POST /agents/value-capture/LDO` **без** документации → внятный отказ, `score: null` · загрузить доку через `POST /manual/docs/LDO` → повторный вызов даёт категории и непустой `evidence` · **открыть одну ссылку из `evidence` и проверить, что утверждение действительно там есть** · с `mock: true` работает без ключа.
-
-**Запрещено.** Отвечать по памяти при отсутствии документации. Позволять модели ставить балл. Добавлять в схему числовые поля, кроме `confidence`. Принимать `evidence` без валидного URL.
-
-**СТОП. Жди подтверждения.**
-
----
-
-# ШАГ 10 — Агент revenue-quality
-
-**Цель.** Не вся выручка одинаково полезна. Ключевая величина — выручка за вычетом стоимости раздаваемых токенов.
-
-```
-incentiveAdjustedRevenue = revenue12m − incentives12mUsd
-```
-
-Если проект платит стимулов на 10 млн и собирает 8 млн комиссий, экономика отрицательная — как бы красиво ни рос график сборов.
-
-### Оверрайды
-
-`POST /manual/overrides/{token}` — тело с необязательными полями `buyback12mUsd`, `incentives12mUsd`, `cashDistrib12mUsd`, `burn12mUsd` и **обязательным `sourceUrl`**. Хранить в `data/overrides.json`.
-
-`buildContext` дополнить: подхватывать оверрайды в соответствующие поля `AgentContext`. Это же включит компоненты NHY у агента `unlocks` — проверить, что после ввода `buyback12mUsd` его результат изменился.
-
-### Схема (zod)
-
-```ts
-export const RevenueQualitySchema = z.object({
+  // качество выручки
   recurringShare: z.enum(['mostly_recurring','mixed','mostly_one_off','unknown']),
   concentration: z.enum(['diversified','one_main_product','single_client_or_pool','unknown']),
   dependsOnIncentives: z.enum(['no','partially','heavily','unknown']),
-  revenueAfterLpPayoutsKnown: z.boolean(),
-  evidence: z.array(z.object({ claim: z.string(), url: z.string().url() })),
-  missing: z.array(z.string()),
-  confidence: z.number().min(0).max(1),
-});
-```
 
-Очки: recurring — 40/20/5/0; concentration — 30/15/3/0; dependsOnIncentives — 30/12/0/0. Умножить на `(0.5 + 0.5 × confidence)`.
-
-### Итоговый балл
-
-Если стимулы известны — числовая маржа важнее классификации: `0.6 × маржа + 0.4 × балл модели`. Если неизвестны — только балл модели, и в `missing` запись «стоимость token incentives за 12м неизвестна».
-
-Дополнительная метрика: `revenuePerTvlPct`.
-
-Если `incentiveAdjustedRevenue < 0` → в `notes`: «Экономика отрицательная после стимулов».
-
-**Приёмка.** Ввести через оверрайды стимулы заведомо больше выручки → балл упал, в `notes` появилась пометка об отрицательной экономике · без документации агент работает по числовой части и честно пишет, что состав выручки не классифицирован · после ввода `buyback12mUsd` результат `unlocks` для того же токена изменился.
-
-**Запрещено.** Принимать оверрайды без `sourceUrl`. Считать маржу в float. Заполнять неизвестные стимулы нулём — это превращает «неизвестно» в «нет стимулов».
-
-**СТОП. Жди подтверждения.**
-
----
-
-# ШАГ 11 — Агент sector-position
-
-**Цель.** Сравнение только с прямыми конкурентами. Перпдекс и L1 нельзя мерить одной линейкой — у них разная нормальная маржинальность. LLM не нужен.
-
-### Логика
-
-Из `ctx.snapshot` отобрать проекты того же сектора. Если конкурентов меньше двух — честный отказ: `score: null`, `missing: ['в секторе <X> менее 2 проектов']`, в `notes` — предложение добавить конкурентов в `universe.ts`.
-
-Считать:
-- `revenueSharePct` — доля в суммарной выручке сектора
-- `tvlSharePct` — доля в суммарном TVL
-- `revenuePerTvlPct` — эффективность
-- `pRev` — оценка
-
-Нормализовать в **перцентили внутри сектора**: эффективность (больше — лучше), дешевизна по P/Rev (меньше — лучше), доля выручки (больше — лучше). Балл — среднее доступных перцентилей.
-
-### Классификация (`verdict.role`)
-
-- **лидер сектора** — доля выручки ≥ 40% и перцентиль эффективности ≥ 60
-- **переоценён относительно конкурентов** — перцентиль дешевизны < 30 и перцентиль доли < 50
-- **догоняющий** — перцентиль эффективности ≥ 50
-- **аутсайдер** — остальное
-
-В `verdict.peers` перечислить, с кем именно шло сравнение — иначе результат непроверяем.
-
-**Приёмка.** `POST /agents/sector-position/AAVE` и `/MORPHO` → роли разные, в `peers` указан конкурент · `POST /agents/sector-position/LINK` (единственный в секторе `infra`) → честный отказ, а не выдуманный балл.
-
-**Запрещено.** Сравнивать проекты из разных секторов. Выдавать балл при одном участнике сектора. Вызывать LLM.
-
-**СТОП. Жди подтверждения.**
-
----
-
-# ШАГ 12 — Агент organic
-
-**Цель.** Отделить реальное использование от субсидированного и манипулятивного роста.
-
-Важное ограничение, которое должно быть отражено в `notes` агента: это **дешёвые прокси, а не полноценный он-чейн-форензик**. Кластеризация кошельков и sybil-детект — отдельная задача на месяцы. Здесь ловится очевидное, не всё.
-
-### Численная часть (код)
-
-`turnover24hPct = vol24hUsd / mcapUsd × 100`. Флаги:
-- больше 50% → «оборот X% от капитализации за сутки, проверьте wash trading»
-- меньше 0.5% → «токен неликвиден, выход из позиции будет дорогим»
-
-### Схема (zod)
-
-```ts
-export const OrganicSchema = z.object({
-  classification: z.enum(['organic','subsidized','likely_manipulated','unknown']),
+  // характер роста
+  growthCharacter: z.enum(['organic','subsidized','likely_manipulated','unknown']),
   signalsFound: z.array(z.string()),
-  retentionAfterIncentives: z.enum(['held_up','declined_moderately','collapsed','no_data'])
-    .describe('что стало с активностью после окончания программы стимулов'),
-  airdropCorrelation: z.enum(['none','weak','strong','no_data']),
+
   evidence: z.array(z.object({ claim: z.string(), url: z.string().url() })),
   missing: z.array(z.string()),
   confidence: z.number().min(0).max(1),
 });
 ```
 
-Очки: organic 90, subsidized 45, likely_manipulated 10, unknown 40. Корректировки: `held_up` +10, `collapsed` −25, `airdropCorrelation: strong` −20, каждый численный флаг −10. Умножить на `(0.6 + 0.4 × confidence)`.
+Все поля — категории. Ни одного числового, кроме `confidence`.
 
-Без текста в контексте агент работает только по численным прокси и пишет об этом в `missing`.
+### Балл считает код
 
-**Приёмка.** Токен с высоким оборотом получает флаг · без текста агент возвращает численную часть и честную пометку · в `notes` присутствует оговорка про ограниченность метода.
+- feeSwitch: `active_paid` 30, `approved_not_live` 12, `discussed` 4, иначе 0
+- valueRoute: `buyback` 25, `staking_from_fees` 25, `treasury_only` 8,
+  `staking_from_emissions` 0, иначе 0
+- buyback: `revenue` 15, `treasury` 5, иначе 0
+- tokenRequired: `required` 10, `optional_discount` 5, иначе 0
+- recurring: `mostly_recurring` 10, `mixed` 5, иначе 0
+- dependsOnIncentives: `no` 10, `partially` 4, иначе 0
+- growthCharacter: `organic` +10, `subsidized` 0, `likely_manipulated` −15
 
-**Запрещено.** Заявлять уверенную органичность на одних численных прокси. Опускать оговорку про ограниченность.
+Сумма умножается на `(0.5 + 0.5 × confidence)`, зажимается в 0..100.
+**Таблица очков в профиль не выносится** — иначе подбором профиля достижим
+любой вывод.
 
-**СТОП. Жди подтверждения.**
+### Численная часть — код, не модель
+
+`turnoverPct` уже посчитан. Флаги: выше 50% → «оборот X% от капитализации за
+сутки, проверьте wash trading»; ниже 0.5% → «токен неликвиден, выход из позиции
+будет дорогим». Каждый флаг −10.
+
+Если известен `incentives12mUsd`, считать
+`incentiveAdjustedRevenue = revenue12mUsd − incentives12mUsd`. Отрицательный
+результат → в `notes` «Экономика отрицательная после стимулов». Стимулы
+неизвестны → запись в `missing`, **ноль не подставлять**.
+
+### Сверка модели с данными — обязательна
+
+Код сравнивает ответ модели с числами и пишет расхождения в
+`verdict.contradictions`:
+
+- модель говорит `feeSwitchStatus: none`, а `holdersRevenue12mUsd > 0` →
+  «модель не нашла механизм, который данные показывают»;
+- модель говорит `active_paid`, а `holdersRevenue12mUsd` пуст или ноль →
+  «механизм заявлен, но выплат в данных нет».
+
+При расхождении `confidence` домножается на 0.5. Дешёвая проверка, ловит и
+плохую документацию, и выдумки модели.
+
+### Хард-фильтр
+
+`verdict.hardFilterFail = true`, если одновременно: feeSwitch в
+(`none`, `unknown`) И valueRoute в (`none`, `staking_from_emissions`,
+`unknown`) И tokenRequired в (`governance_only`, `unknown`) И
+`holdersRevenue12mUsd` пуст или равен нулю. В `notes`: «Связь "успех протокола
+→ токен" не обнаружена». Числовое условие обязательно: без него отказ держится
+только на мнении модели.
+
+### Поведение без документации
+
+`score: null`, `missing: ['нет документации в data/docs/<TOKEN>/']`, в `notes` —
+как загрузить. Численные флаги и `holderYieldPct` при этом отдаются: они не
+зависят от модели. **Ни при каких условиях не отвечать по памяти модели.**
+
+### Промпт
+
+Передать текст документации (обрезать до разумного размера) и явно перечислить
+различия, которые нужно поймать: проголосован ≠ выплачивается; стейкинг из
+комиссий ≠ из эмиссии; выкуп из выручки ≠ из казны; условия выключения
+механизма; разовая выручка ≠ повторяющаяся. Завершить требованием отвечать
+только по переданному тексту.
+
+**Приёмка.** Без документации → внятный отказ, `score: null`, численные флаги на
+месте · после `POST /manual/docs/LDO` → категории и непустой `evidence` ·
+**открыть одну ссылку из `evidence` и проверить, что утверждение там есть** · на
+токене с `holdersRevenue > 0` и скудной документацией → `verdict.contradictions`
+непуст · с `mock: true` работает без ключа · один и тот же токен под двумя
+профилями → **результат из кэша, второго вызова модели нет**.
+
+**Запрещено.** Отвечать по памяти при отсутствии документации. Позволять модели
+ставить балл. Числовые поля в схеме, кроме `confidence`. Принимать `evidence`
+без валидного URL. Выносить таблицу очков в профиль.
+
+**СТОП.**
 
 ---
 
-# ШАГ 13 — Агент critic
+# ШАГ 14 — Агент critic (LLM, проход второй)
 
-**Цель.** Попытаться опровергнуть тезис, а не подтвердить. Запускается по верхушке рейтинга — деньги идут туда, там и нужна проверка.
+**Цель.** Попытаться опровергнуть тезис, а не подтвердить. Запускается по
+верхушке — деньги идут туда, там и нужна проверка.
 
 ### Сбор контекста
 
-Перед вызовом собрать результаты остальных агентов в `ctx.priorResults`: сначала из кэша (`store.loadResult` за сегодня), недостающих прогнать. Передавать модели не полные результаты, а выжимку: `verdict`, `score`, `dataQuality`, `missing` по каждому агенту.
+Перед вызовом собрать результаты остальных агентов в `ctx.priorResults`: сначала
+из кэша (`store.loadResult` за сегодня), недостающих прогнать. Передавать модели
+не полные результаты, а выжимку: `verdict`, `score`, `dataQuality`, `missing` по
+каждому агенту.
+
+Без `priorResults` — честный отказ с инструкцией, а не критика вслепую.
 
 ### Схема (zod)
 
@@ -914,97 +865,162 @@ export const CriticSchema = z.object({
 
 ### Балл
 
-База: `confidenceInThesis × 100`. Штрафы: `isFalsifiable: false` −30, `successWithoutToken: true` −25, `singleSourceRisk: true` −10, `liquidityConcern: severe` −20 (`moderate` −8).
+База: `confidenceInThesis × 100`. Штрафы: `isFalsifiable: false` −30,
+`successWithoutToken: true` −25, `singleSourceRisk: true` −10,
+`liquidityConcern: severe` −20 (`moderate` −8).
 
-Штраф за нефальсифицируемость — не придирка: тезис, который нельзя опровергнуть, нельзя и подтвердить.
+Штраф за нефальсифицируемость не придирка: тезис, который нельзя опровергнуть,
+нельзя и подтвердить.
 
 ### Промпт
 
-Явно поставить задачу опровергнуть, а не подтвердить. Потребовать конкретики: не «есть риски регулирования», а проверяемое утверждение вида «если доля выручки от одного пула упадёт ниже X, механизм выкупа остановится». Если конкретный факт назвать нельзя — `isFalsifiable: false`.
+Явно поставить задачу опровергнуть. Потребовать конкретики: не «есть риски
+регулирования», а проверяемое утверждение вида «если доля выручки от одного пула
+упадёт ниже X, механизм выкупа остановится». Нельзя назвать конкретный факт —
+`isFalsifiable: false`.
 
-**Приёмка.** `POST /agents/critic/AAVE` → `killerFact` содержит конкретное проверяемое утверждение, `whereToCheck` указывает на источник · если приходят общие слова — промпт плохой, доработать · без результатов других агентов → честный отказ с инструкцией.
+**Приёмка.** `POST /agents/critic/AAVE` → `killerFact` содержит конкретное
+проверяемое утверждение, `whereToCheck` указывает на источник · общие слова
+означают плохой промпт, дорабатывать · без `priorResults` → честный отказ.
 
-**Запрещено.** Принимать общие рассуждения о рисках как `killerFact`. Запускать критика без `priorResults`.
+**Запрещено.** Принимать общие рассуждения о рисках как `killerFact`. Запускать
+критика без `priorResults`.
 
-**СТОП. Жди подтверждения.**
+**СТОП.**
 
 ---
 
-# ШАГ 14 — Рейтинг и проверка системы
+# ШАГ 15 — Рейтинг и проверка системы
 
-**Цель.** Одна кнопка → полный прогон → тиры и лучшие по секторам. Плюс механизм проверки самой системы.
+**Цель.** Один вызов → полный прогон по выбранному профилю → тиры и лидеры
+секторов. Плюс механизм проверки самой системы.
+
+### Кого прогоняем
+
+`alpha.leaders` выбранного профиля — 60–80 токенов вместо 678. Тир `pool` в
+прогон не идёт: у него нет финансовых данных, агенты вернут честный отказ и
+потратят время.
+
+Критик запускается по прошедшим хард-фильтры с композитом ≥ 45. При двух
+LLM-проходах это 40–60 вызовов модели на полный прогон.
+
+Fan-out через `p-limit`, 3–4 одновременно.
 
 ### RankingService
 
-**1. Хард-фильтры.** Не попадает в основной рейтинг независимо от популярности проекта:
-- `value-capture.verdict.hardFilterFail` — нет связи «успех протокола → токен»
+**1. Хард-фильтры.** Не попадают в основной рейтинг независимо от популярности:
+
+- `mechanism.verdict.hardFilterFail` — нет связи «успех протокола → токен»
 - `unlocks.verdict.hardFilterFail` — отрицательный NHY
 - `screener.verdict.passed === false`
 
-Такие уходят в `watchlist` **с указанием причины** и с пометкой, какое событие вернуло бы их в рейтинг.
+Такие уходят в `watchlist` **с причиной** и с пометкой, какое событие вернуло бы
+их в рейтинг.
 
-**2. Композит** по весам из `WEIGHTS`, с нормировкой на сумму весов доступных агентов.
+**2. Композит** по `profile.weights` с нормировкой на сумму весов доступных
+модулей. Затем множитель критика: `composite × (0.6 + 0.4 × criticScore / 100)`
+для тех, кого критик смотрел.
 
-**3. Тиры вместо позиций:**
+**3. Тиры** по `profile.tierCuts`:
+
 - есть хард-фильтр → `watchlist`
-- нет балла или `dataQuality < 0.5` → `C`
-- балл ≥ 70 и `dataQuality ≥ 0.7` → `A`
-- балл ≥ 45 → `B`
+- нет балла или `dataQuality < minDataQuality` → `C`
+- балл ≥ `a` и `dataQuality ≥ 0.7` → `A`
+- балл ≥ `b` → `B`
 - иначе → `C`
 
-Разница между 4-м и 9-м местом в таком рейтинге — шум, поэтому внутри тира порядок условный.
+Разница между 4-м и 9-м местом — шум, поэтому внутри тира порядок условный.
 
-**4. Лучшие в каждом секторе** — по 1–2 проекта. Общий отсортированный список тоже вывести, но главным считать секторный срез: сравнивать лидера лендингов с лидером инфраструктуры одним числом бессмысленно.
+### Профиль записывается в результат целиком
+
+Не идентификатором, а содержимым — в каждый результат и в markdown-отчёт.
+«Топ-10» без указания, каким отбором получен, бессмыслен, а через месяц по имени
+профиля мнение не восстановить.
 
 ### Карточка проекта
 
-Формировать по каждому активу: проект, сектор, капитализация, выручка 12м, P/Rev, состояние fee switch / стейкинга / выкупа, NHY, риск разводнения, ближайший разлок в дневных объёмах, качество выручки, позиция в секторе, органичность, что разрушает тезис, где проверить, качество данных, тир, композит.
+Проект, сектор, версия вселенной, профиль, капитализация, выручка 12м, комиссии
+12м, take rate, доход держателя, P/Rev, состояние fee switch и маршрут возврата
+ценности, NHY, риск разводнения, float, ближайший разлок в дневных объёмах,
+качество выручки, характер роста, позиция в секторе, расхождения модели с
+данными, что разрушает тезис, где проверить, качество данных, тир, композит.
 
-### Fan-out
+### Эндпоинты
 
-Параллельно через `p-limit`, 3–4 одновременно — иначе rate limit. Критика запускать только для прошедших хард-фильтры с композитом ≥ 45.
-
-### Эндпоинты (тег `ranking`)
-
-- `POST /ranking/run` — тело `{ sector?, mock?, noCritic? }`. Ответ: тиры, watchlist с причинами, лучшие по секторам, карточки
+- `POST /ranking/run` — тело `{ profileId?, profile?, sector?, mock?, noCritic? }`.
+  Ответ: тиры, watchlist с причинами, лидеры по секторам, карточки, профиль.
 - `GET /ranking/latest`
 - `GET /ranking/report/{date}` — markdown-отчёт из `reports/`
+- `POST /ranking/sensitivity` — 25 прогонов композита со случайно изменёнными на
+  ±30% весами, средняя перестановка топ-10. Интерпретация в ответе: перестановка
+  ≤ 1 позиции → «рейтинг устойчив»; больше → «рейтинг определяется вашими
+  весами, а не данными, модель нужно упрощать».
 
-### Тест устойчивости к весам
-
-`POST /ranking/sensitivity` — 25 прогонов композита со случайно изменёнными на ±30% весами, считается средняя перестановка топ-10.
-
-Интерпретация в ответе: перестановка ≤ 1 позиции → «рейтинг устойчив»; больше → «рейтинг определяется вашими весами, а не данными, модель нужно упрощать».
+**`POST /universe/compare` из шага 05 — та же проверка, только злее:** там веса
+дёргаются на ±30%, здесь меняется целая позиция. Если консервативный и
+агрессивный профили дают полностью разный топ-10, вы смотрите на своё мнение, а
+не на рынок.
 
 ### Журнал
 
-`reports/journal.md` дополняется при каждом прогоне: дата, тир A и B, композиты. Плюс постоянная секция с инструкцией: через 3 и 6 месяцев сравнить равновзвешенную корзину из своего топа с равновзвешенной корзиной BTC/ETH; систематический проигрыш означает, что систему надо чинить или выбросить.
+`reports/journal.md` дополняется при каждом прогоне: дата, версия вселенной,
+**идентификатор профиля**, тиры A и B, композиты. Плюс постоянная секция с
+инструкцией: через 3 и 6 месяцев сравнить равновзвешенную корзину из своего топа
+с равновзвешенной корзиной BTC/ETH.
 
-Это единственная честная проверка всей конструкции. Без неё система остаётся упражнением в оформлении.
+Корзина именуется профилем, поэтому через полгода журнал ответит не «система
+работает или нет», а **какое из ваших мнений работало**. Гипотеза «плачу за
+доходность держателя» против «плачу за дешевизну» — это две колонки, а не два
+спора. Это единственная честная проверка всей конструкции.
 
 ### Дисклеймер
 
-В ответ `POST /ranking/run` и в конец markdown-отчёта добавить: «Исследовательский инструмент. Не является инвестиционной рекомендацией. Каждое число проверяется по указанному источнику.»
+В ответ `POST /ranking/run` и в конец markdown-отчёта: «Исследовательский
+инструмент. Не является инвестиционной рекомендацией. Каждое число проверяется
+по указанному источнику.»
 
-**Приёмка.** `POST /ranking/run` с `{"sector":"lending","mock":true}` → тиры распределены, watchlist с причинами · полный прогон формирует markdown в `reports/` · `POST /ranking/sensitivity` возвращает число и интерпретацию · в карточке видно, почему проект оказался там, где оказался · журнал дополняется.
+**Приёмка.** `POST /ranking/run` с `{"profileId":"yield-hunter","mock":true}` →
+тиры распределены, watchlist с причинами · тот же прогон с `deep-value` → другой
+состав тира A, **повторных вызовов модели нет** · полный прогон формирует
+markdown в `reports/` с профилем внутри · `sensitivity` возвращает число и
+интерпретацию · журнал дополняется с идентификатором профиля.
 
-**Запрещено.** Усреднять баллы вслепую, игнорируя хард-фильтры. Выдавать единый отсортированный список как главный результат. Опускать дисклеймер.
+**Запрещено.** Усреднять баллы вслепую, игнорируя хард-фильтры. Выдавать единый
+отсортированный список как главный результат. Прогонять LLM по тиру `pool`.
+Публиковать отчёт без профиля внутри. Опускать дисклеймер.
 
 **СТОП. Проект готов.**
 
 ---
----
 
-## Подводные камни
+## Подводные камни оставшихся шагов
 
-**zod и Swagger — разные схемы.** zod валидирует ответы модели, `@ApiProperty` описывает HTTP-контракт. Либо держать раздельно, либо взять `nestjs-zod` (`createZodDto`, `patchNestJsSwagger`). Решить на шаге 05, переделывать позже дорого.
+**Профиль без `rationale` — это набор чисел.** Через месяц вы не вспомните,
+почему `pRev ≤ 15`, а не 20. Поле обязательное, и оно едет в отчёт.
 
-**Плавающая точка в деньгах.** `0.1 + 0.2 !== 0.3`. В NHY складываются доходности и вычитается разводнение — накопленная ошибка переворачивает знак на пограничном активе. Только `decimal.js`.
+**Альфа отсеет меньше, чем кажется.** При пяти лидерах на сектор и дробных
+категориях DeFiLlama основной отсев делает не альфа, а наличие финансовых
+данных. Её вклад — в том, что агенты идут по лидерам ниш, и в списке
+`needsManualData`, который показывает, где система слепа.
 
-**Rate limit CoinGecko.** Бесплатный тариф жёсткий. Без пауз и кэша снапшот придёт наполовину пустым, и легко решить, что дело в слагах.
+**Секторы DeFiLlama дробные.** `dex-aggregator`, `physical-tcg`, `domains` — по
+одному участнику. `sector-position` будет отказывать чаще, чем кажется. Это
+честный исход; если отказов слишком много, секторы объединяются в карте
+соответствий, а не порог опускается до двух.
 
-**Слаги DeFiLlama в `universe.ts` — предположения.** Часть наверняка неверна. Обнаружится на шаге 04 пустой выручкой. Не подгонять парсинг, а исправлять слаг.
+**Кэш LLM не должен зависеть от профиля.** Как только таблицы очков попадут в
+профиль, пять профилей начнут стоить как пять прогонов, и это будет
+единственный симптом того, что граница гибкости нарушена.
 
-**Кэш обязателен с самого начала.** Без него каждая отладка LLM-агента стоит денег и времени.
+**Оверрайд против данных.** `buyback12mUsd`, введённый руками, и
+`holdersRevenue12mUsd` из API — два измерения одного. Расхождение вдвое
+означает, что одно неверно, и это повод написать в `notes`, а не тихо выбрать
+любимое.
 
-**Порядок шагов не менять.** Шаги 01–07 не требуют API-ключа вообще. Это половина ценности системы, отлаживаемая бесплатно. Начать с LLM-агентов — значит отлаживать промпты поверх непроверенных данных, где непонятно, кто виноват.
+**Один большой LLM-вызов заполняется хуже трёх маленьких.** У `mechanism`
+одиннадцать полей. Если на приёмке видно, что модель стабильно путает
+`valueRoute` и `buybackSource`, схему надо резать на две, а не уговаривать
+промптом.
+
+**`z.toJSONSchema` в zod v4 — не то же, что `zodToJsonSchema` в v3.** Проверить
+вывод на реальном вызове до того, как на нём будет построено два агента.

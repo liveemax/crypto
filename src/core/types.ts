@@ -62,3 +62,18 @@ export interface Agent {
   readonly needs: (keyof SnapshotRow)[];
   run(token: string, row: SnapshotRow, ctx: AgentContext): Promise<AgentResult>;
 }
+
+export interface SnapshotRowExtension {
+  /** Капитализация, посчитанная кодом: price × circulating. */
+  mcapCalcUsd?: number | null;
+  /** Время обновления рыночных данных на стороне CoinGecko. */
+  asOfMarket?: string | null;
+  /** Время обновления выручки на стороне DeFiLlama. */
+  asOfFees?: string | null;
+  /** Время обновления TVL на стороне DeFiLlama. */
+  asOfTvl?: string | null;
+  /** Основание расчёта выручки за 12 месяцев. */
+  revenueBasis?: 'reported_1y' | 'run_rate_30d' | 'none';
+  /** Версия вселенной, в составе которой собрана строка. */
+  universeVersion?: string | null;
+}

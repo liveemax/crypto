@@ -1,0 +1,77 @@
+/**
+ * Настройки слоя обнаружения вселенной.
+ *
+ * Здесь только то, что отсеивает откровенный шлак. Пороги оценки
+ * (минимальная выручка, максимальный P/Rev) живут в THRESHOLDS и применяются
+ * агентом screener на шаге 06 — дублировать их здесь значит отрезать
+ * Ethereum и Solana до того, как скринер их увидит.
+ */
+export const DISCOVERY = {
+  /** Размер пула кандидатов. На топ-1300 хвост капитализации ~15 млн USD. */
+  topN: 1_300,
+  /** Запас на пересортировку по price × circulating. */
+  fetchN: 1_500,
+  /** Размер страницы CoinGecko, максимум 250. */
+  pageSize: 250,
+  /** Состав вселенной старше этого числа дней пересобирается. */
+  refreshDays: 30,
+  /** Множитель годового run-rate из 30-дневной выручки. */
+  runRate30dToYear: 12.17,
+  /** Расхождение своей и заявленной капитализации выше порога попадает в warnings. */
+  maxMcapDivergencePct: 5,
+
+  /** Ниже этого суточного объёма из позиции не выйти по разумной цене. */
+  minVol24hUsd: 500_000,
+  /** Оборот ниже этой доли капитализации за сутки — мёртвый токен. */
+  minTurnoverPct: 0.1,
+  /**
+   * Доля эмиссии в обращении. Ниже порога основная часть предложения ещё не
+   * выпущена: держатель платит за капитализацию, а получит разводнение.
+   */
+  minFloatPct: 15,
+
+  /**
+   * Категории CoinGecko, уходящие в отсев целиком. Список берётся из API,
+   * а не пишется руками: `/coins/markets?category=<id>` отдаёт состав.
+   */
+  excludedCoingeckoCategories: [
+    'stablecoins',
+    'wrapped-tokens',
+    'liquid-staking-tokens',
+    'bridged-tokens',
+    'tokenized-gold',
+    'tokenized-treasury-bills',
+  ],
+  /** Мемкоины отсекаются отдельным флагом: решение спорное, включается одним местом. */
+  excludeMemecoins: true,
+  memecoinCategory: 'meme-token',
+
+  /**
+   * Категории DeFiLlama, которые не являются бизнесом с собственной выручкой.
+   * Chain здесь НЕТ: L1 — полноценный источник комиссий.
+   */
+  excludedLlamaCategories: ['CEX', 'Bridge', 'Canonical Bridge', 'Chain Bridge'],
+
+  /** Ручной добавок к отсеву — то, что не попало ни в одну категорию. */
+  excludedCoingeckoIds: ['weth', 'wrapped-beacon-eth'],
+
+  /**
+   * Цена в этом коридоре вокруг 1 USD считается привязкой.
+   * Страховка на случай, если токена нет ни в реестре стейблкоинов, ни в категориях.
+   */
+  pegBandPct: 1.5,
+} as const;
+
+/**
+ * Названия производных активов: обёртки, LST-репрезентации, мосты.
+ * Цена такого токена отражает базовый актив, а не бизнес эмитента.
+ */
+export const DERIVATIVE_NAME = /\b(wrapped|bridged|staked|restaked|peg)\b/i;
+
+/** Ручные поправки соответствия «монета CoinGecko → протоколы DeFiLlama». */
+export const SLUG_OVERRIDES: Record<string, string[]> = {
+  hyperliquid: ['hyperliquid'],
+  sky: ['sky-lending', 'maker'],
+  'lido-dao': ['lido'],
+  havven: ['synthetix'],
+};

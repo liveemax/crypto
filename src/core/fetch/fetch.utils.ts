@@ -1,35 +1,151 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
+export interface FetchResult<T = unknown> {
+  /** Запрос завершился кодом 2xx и тело разобрано как JSON. */
+  ok: boolean;
+  /** HTTP-статус; null означает сетевой сбой или таймаут. */
+  status: number | null;
+  data: T | null;
+  error: string | null;
+}
+
 export interface FetchOptions {
   attempts?: number;
-  pauseMs?: number;
+  timeoutMs?: number;
+  /** Минимальная пауза между запросами к одному хосту. */
+  minGapMs?: number;
+  headers?: Record<string, string>;
 }
 
-/** Выполняет HTTP-запрос с паузой и экспоненциальными повторами. */
-export async function fetchJson(
+/** Паузы по хостам: CoinGecko на бесплатном тарифе режет жёстко, DeFiLlama мягко. */
+const HOST_GAP_MS: Record<string, number> = {
+  'api.coingecko.com': process.env.COINGECKO_API_KEY ? 2_200 : 4_500,
+  'api.llama.fi': 400,
+};
+
+const lastCallAt = new Map<string, number>();
+const hostQueue = new Map<string, Promise<unknown>>();
+
+/**
+ * Выполняет HTTP-запрос с очередью на хост, таймаутом и повторами.
+ * Статус ответа не теряется: вызывающий отличает 404 от 429 и от сетевого сбоя.
+ */
+export async function fetchJson<T = unknown>(
   url: string,
   options: FetchOptions = {},
-): Promise<unknown> {
+): Promise<FetchResult<T>> {
   const attempts = options.attempts ?? 3;
-  const pauseMs = options.pauseMs ?? 1_200;
+  const timeoutMs = options.timeoutMs ?? 20_000;
+  const host = hostOf(url);
+  const minGapMs = options.minGapMs ?? HOST_GAP_MS[host] ?? 1_000;
+
+  let last: FetchResult<T> = {
+    ok: false,
+    status: null,
+    data: null,
+    error: 'Запрос не выполнялся',
+  };
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (pauseMs > 0) await sleep(pauseMs);
-    try {
-      const response = await fetch(url);
-      if (response.ok) return (await response.json()) as unknown;
-      if (
-        attempt === attempts - 1 ||
-        (response.status < 500 && response.status !== 429)
-      )
-        return null;
-      await sleep((response.status === 429 ? 4 : 1) * 2 ** attempt * pauseMs);
-    } catch {
-      if (attempt === attempts - 1) return null;
-      await sleep(2 ** attempt * pauseMs);
-    }
+    last = await withHostSlot(host, minGapMs, () =>
+      requestOnce<T>(url, timeoutMs, options.headers),
+    );
+    if (last.ok) return last;
+
+    const retriable =
+      last.status === null || last.status === 429 || last.status >= 500;
+    if (!retriable || attempt === attempts - 1) return last;
+
+    const factor = last.status === 429 ? 4 : 1;
+    await delay(factor * 2 ** attempt * minGapMs);
   }
-  return null;
+
+  return last;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function requestOnce<T>(
+  url: string,
+  timeoutMs: number,
+  headers?: Record<string, string>,
+): Promise<FetchResult<T>> {
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'crypto-agents/0.1 (research tool)',
+        ...headers,
+      },
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        data: null,
+        error: `HTTP ${response.status} ${response.statusText}`,
+      };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      data: (await response.json()) as T,
+      error: null,
+    };
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      status: null,
+      data: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/** Сериализует обращения к одному хосту и выдерживает между ними паузу. */
+async function withHostSlot<T>(
+  host: string,
+  minGapMs: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = hostQueue.get(host) ?? Promise.resolve();
+  const current = previous.then(async () => {
+    const wait = (lastCallAt.get(host) ?? 0) + minGapMs - Date.now();
+    if (wait > 0) await delay(wait);
+    lastCallAt.set(host, Date.now());
+    return run();
+  });
+  hostQueue.set(
+    host,
+    current.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return current;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'unknown';
+  }
+}
+
+/** Разбивает список на куски фиксированного размера. */
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+/** Возвращает конечное число или null — вместо тихого приведения к нулю. */
+export function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

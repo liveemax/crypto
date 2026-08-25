@@ -3,6 +3,8 @@ import { StoreService } from '../store/store.service';
 import { chunk, fetchJson, isRecord, nullableNumber } from './fetch.utils';
 import { DISCOVERY } from '../../config/discovery';
 const BASE = 'https://api.coingecko.com/api/v3';
+import { setTimeout as delay } from 'node:timers/promises';
+
 
 export interface CoinMarket {
   coingeckoId: string;
@@ -28,6 +30,16 @@ export interface MarketPageEvent {
   rowsOnPage: number;
   loaded: number;
   ok: boolean;
+  status: number | null;
+  error: string | null;
+}
+
+/**
+ * Состав категории. Статус нужен, чтобы отличить «источник лёг» (429, лечится
+ * повтором) от «такого идентификатора нет» (4xx, повтор не поможет никогда).
+ */
+export interface CategoryResult {
+  ids: string[] | null;
   status: number | null;
   error: string | null;
 }
@@ -135,16 +147,35 @@ export class CoingeckoService {
    * Используется для отсева стейблов, обёрток и мемкоинов по данным, а не по
    * списку, написанному руками.
    */
-  async getCategoryIds(category: string): Promise<string[] | null> {
+  async getCategoryIds(category: string): Promise<CategoryResult> {
     const query =
       `vs_currency=usd&category=${encodeURIComponent(category)}` +
       `&order=market_cap_desc&per_page=${DISCOVERY.pageSize}&page=1&sparkline=false`;
+    const cacheKey = `category-${category}`;
+    const cached = await this.store.cacheGet<string[]>('coingecko', cacheKey);
+    // Пустой массив в JS истинный: без проверки длины отравленный кэш
+    // отдавался бы сутки, а совет «повторите» был бы ложью.
+    if (cached && cached.length > 0) {
+      return { ids: cached, status: null, error: null };
+    }
+
     const response = await fetchJson<unknown>(withKey(`${BASE}/coins/markets?${query}`));
-    if (!response.ok || !Array.isArray(response.data)) return null;
-    return response.data
+    if (!response.ok || !Array.isArray(response.data)) {
+      return {
+        ids: null,
+        status: response.status,
+        error: response.error ?? 'ответ не является массивом',
+      };
+    }
+
+    const ids = response.data
       .filter(isRecord)
       .map((item) => (typeof item.id === 'string' ? item.id : null))
       .filter((id): id is string => id !== null);
+    // Пустой результат не кэшируется: это либо неверный идентификатор, либо сбой
+    // источника, и запоминать любое из двух на сутки нельзя.
+    if (ids.length > 0) await this.store.cachePut('coingecko', cacheKey, ids);
+    return { ids, status: response.status, error: null };
   }
 
   /** Возвращает свежие рыночные данные по списку монет пачками по 250. */
@@ -152,26 +183,39 @@ export class CoingeckoService {
     ids: readonly string[],
   ): Promise<{ rows: CoinMarket[]; errors: string[] }> {
     const rows: CoinMarket[] = [];
-    const errors: string[] = [];
+    const parts = chunk(ids, DISCOVERY.pageSize);
+    let pending = parts.map((part, index) => ({ part, index }));
+    let errors: string[] = [];
 
-    for (const [index, part] of chunk(ids, DISCOVERY.pageSize).entries()) {
-      const query =
-        `vs_currency=usd&ids=${part.map(encodeURIComponent).join(',')}` +
-        `&per_page=${DISCOVERY.pageSize}&page=1&sparkline=false&locale=en`;
-      const sourceUrl = `${BASE}/coins/markets?${query}`;
-      const response = await fetchJson<unknown>(withKey(sourceUrl));
+    // Два прохода: упавшая пачка повторяется после остальных, когда минутное окно
+    // CoinGecko уже сдвинулось. Пять успешных пачек не выбрасываются из-за шестой.
+    for (let round = 0; round < 2 && pending.length > 0; round += 1) {
+      if (round > 0) await delay(60_000);
+      const failed: typeof pending = [];
+      errors = [];
 
-      if (!response.ok || !Array.isArray(response.data)) {
-        errors.push(
-          `Пачка из ${part.length} монет: ${response.error ?? 'ответ не является массивом'}`,
-        );
-        continue;
+      for (const { part, index } of pending) {
+        const query =
+          `vs_currency=usd&ids=${part.map(encodeURIComponent).join(',')}` +
+          `&per_page=${DISCOVERY.pageSize}&page=1&sparkline=false&locale=en`;
+        const sourceUrl = `${BASE}/coins/markets?${query}`;
+        const response = await fetchJson<unknown>(withKey(sourceUrl));
+
+        if (!response.ok || !Array.isArray(response.data)) {
+          errors.push(
+            `Пачка ${index + 1} из ${parts.length}, ${part.length} монет: ` +
+              `${response.error ?? 'ответ не является массивом'}`,
+          );
+          failed.push({ part, index });
+          continue;
+        }
+        await this.store.saveRaw('coingecko-markets', `ids-${index + 1}`, response.data);
+        for (const item of response.data) {
+          const row = toMarket(item, sourceUrl);
+          if (row) rows.push(row);
+        }
       }
-      await this.store.saveRaw('coingecko-markets', `ids-${index + 1}`, response.data);
-      for (const item of response.data) {
-        const row = toMarket(item, sourceUrl);
-        if (row) rows.push(row);
-      }
+      pending = failed;
     }
 
     return { rows, errors };

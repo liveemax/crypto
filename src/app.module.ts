@@ -5,6 +5,7 @@ import { FetchModule } from './core/fetch/fetch.module';
 import { UniverseModule } from './core/universe/universe.module';
 import { HealthController } from './health/health.controller';
 import { CoreModule } from './core/core.module';
+import { JobsModule } from './core/jobs/jobs.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { CoreModule } from './core/core.module';
     AppConfigModule,
     UniverseModule,
     FetchModule,
+    JobsModule
   ],
   controllers: [HealthController],
 })

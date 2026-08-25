@@ -147,13 +147,17 @@ export const YIELD_HUNTER_PROFILE: AnalysisProfile = {
     'заметную долю выручки протокола.',
   screen: [
     ...BASE_SCREEN,
-    rule('holder_yield', 'Доходность держателя не ниже 1%', 'holderYieldPct', 'gte', 1),
+    // 'pass': монета без финансовых данных не провалила порог — её не измеряли.
+    // Она остаётся в тире pool и попадает в очередь на ручной сбор данных;
+    // из ранжирования её убирает alpha.includeTiers, а не воронка.
+    rule('holder_yield', 'Доходность держателя не ниже 1%', 'holderYieldPct', 'gte', 1, 'pass'),
     rule(
       'payout_ratio',
       'Держателям идёт не меньше 20% выручки',
       'payoutRatioPct',
       'gte',
       20,
+      'pass',
     ),
   ],
   alpha: { ...DEFAULT_ALPHA, includeTiers: ['yield'] },
@@ -172,8 +176,8 @@ export const DEEP_VALUE_PROFILE: AnalysisProfile = {
         ? { ...screenRule, label: 'В обращении не меньше 30% эмиссии', value: 30 }
         : screenRule,
     ),
-    rule('deep_value_p_rev', 'P/Rev не выше 15', 'pRev', 'lte', 15),
-    rule('deep_value_take_rate', 'Take rate не ниже 10%', 'takeRatePct', 'gte', 10),
+    rule('deep_value_p_rev', 'P/Rev не выше 15', 'pRev', 'lte', 15, 'pass'),
+    rule('deep_value_take_rate', 'Take rate не ниже 10%', 'takeRatePct', 'gte', 10, 'pass'),
   ],
 };
 
@@ -194,6 +198,7 @@ function rule(
   field: Extract<ScreenRule, { kind: 'compare' }>['field'],
   op: 'gte' | 'lte',
   value: number,
+  nullPolicy: 'pass' | 'fail' = 'fail',
 ): ScreenRule {
-  return { stage, label, kind: 'compare', field, op, value, nullPolicy: 'fail' };
+  return { stage, label, kind: 'compare', field, op, value, nullPolicy };
 }

@@ -30,6 +30,8 @@ export interface LlamaProtocol {
   name: string;
   /** Идентификатор монеты на CoinGecko — ключ склейки двух источников. */
   geckoId: string | null;
+  /** Тикер токена протокола: последний шанс склейки, когда gecko_id пуст везде. */
+  symbol: string | null;
   category: string | null;
   tvlUsd: number | null;
   parentProtocol: string | null;
@@ -212,6 +214,10 @@ function toProtocol(item: Record<string, unknown>): LlamaProtocol | null {
     slug,
     name: typeof item.name === 'string' ? item.name : slug,
     geckoId: typeof item.gecko_id === 'string' && item.gecko_id ? item.gecko_id : null,
+    symbol:
+      typeof item.symbol === 'string' && item.symbol && item.symbol !== '-'
+        ? item.symbol
+        : null,
     category: typeof item.category === 'string' ? item.category : null,
     tvlUsd: nullableNumber(item.tvl),
     parentProtocol:

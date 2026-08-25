@@ -6,6 +6,7 @@ import { StoreService } from '../src/core/store/store.service';
 import { SnapshotRow } from '../src/core/types';
 import { UniverseService } from '../src/core/universe/universe.service';
 import { UniverseCandidate } from '../src/core/universe/universe.types';
+import { JobService } from '../src/core/jobs/job.service';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
@@ -117,8 +118,8 @@ describe('SnapshotService', () => {
     latest: jest.fn().mockResolvedValue({ version: '2026-08-24' }),
   } as unknown as UniverseService;
 
-  const service = new SnapshotService(store, defillama, coingecko, universe);
-
+  const service = new SnapshotService(store, defillama, coingecko, universe, new JobService());
+  
   beforeEach(() => {
     jest.clearAllMocks();
     saved.length = 0;

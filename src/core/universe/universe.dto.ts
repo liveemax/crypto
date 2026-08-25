@@ -182,7 +182,7 @@ export class UniverseProgressDto {
   @ApiProperty({
     enum: [
       'idle', 'markets', 'categories', 'protocols', 'chains',
-      'fees', 'join', 'filter', 'save', 'done', 'failed',
+      'fees', 'prices', 'join', 'filter', 'save', 'done', 'failed',
     ],
   })
   step!: string;

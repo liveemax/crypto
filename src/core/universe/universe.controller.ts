@@ -1,5 +1,5 @@
 import { Body, Controller, Get, NotFoundException, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   UniverseCompareResponseDto,
   FunnelReportDto,
@@ -23,11 +23,14 @@ export class UniverseController {
 
   @Post('refresh')
   @ApiOperation({
-    summary: 'Пересобрать состав вселенной',
+    summary: 'ШАГ 1. Скачать состав вселенной. Раз в месяц, ~25 запросов',
     description:
-      'Без force пересборка идёт только если состав старше месяца. ' +
-      'force можно передать и в теле, и в query — второе удобнее в Swagger. ' +
-      'Работа идёт в фоне, счётчик — в GET /universe/status.',
+      'Определяет, кто вообще во вселенной: топ-1300 CoinGecko, склейка с протоколами ' +
+      'и сетями DeFiLlama. Единственный эндпоинт, который тянет состав из интернета.\n\n' +
+      'Идёт в фоне 3–5 минут, ответ приходит сразу. Ход — в GET /universe/status: ' +
+      'ждите state=idle и step=done.\n\n' +
+      'Без force пересборка запускается, только если состав старше месяца. ' +
+      'Обновить цены по тому же составу дешевле — POST /universe/prices.',
   })
   @ApiBody({ type: RefreshUniverseDto, required: false })
   @ApiOkResponse({ type: RefreshUniverseResponseDto })
@@ -43,33 +46,90 @@ export class UniverseController {
 
   @Post('prices')
   @ApiOperation({
-    summary: 'Обновить числа без изменения состава вселенной',
+    summary: 'ШАГ 2. Обновить цены и выручку по тому же составу',
     description:
-      'Загружает рынок CoinGecko и три сводки комиссий DeFiLlama. ' +
-      'Версия и builtAt состава не меняются.',
+      'Тянет свежий рынок CoinGecko и три сводки комиссий DeFiLlama по уже собранным ' +
+      'монетам. Кто во вселенной, version и builtAt не меняются — меняются только числа.\n\n' +
+      'Около 9 запросов и до минуты, поэтому работает в фоне: ответ приходит сразу, ' +
+      'ход — в GET /universe/status, результат — в POST /universe/screen.\n\n' +
+      'Нужен, если состав собран вчера или раньше, а смотреть хочется на сегодняшние цены.',
   })
-  @ApiOkResponse({ type: UniverseScreenResponseDto })
-  async prices(): Promise<UniverseScreenResponseDto> {
+  @ApiOkResponse({ type: RefreshUniverseResponseDto })
+  async prices(): Promise<RefreshUniverseResponseDto> {
     return this.universe.refreshPrices();
   }
 
   @Post('screen')
   @ApiOperation({
-    summary: 'Применить профиль к сохранённой вселенной без сети',
+    summary: 'ШАГ 3. Отобрать интересное — мгновенно, без интернета',
     description:
-      'Принимает profileId встроенного профиля или полный разовый profile. ' +
-      'Сохранённый снимок не изменяется.',
+      'Прогоняет уже собранную вселенную через фильтры выбранного профиля и отдаёт ' +
+      'воронку отсева и тиры. В сеть не ходит, снимок не меняет, работает мгновенно — ' +
+      'меняйте профиль сколько угодно раз, это бесплатно.\n\n' +
+      'Передавайте ЛИБО profileId готового профиля, ЛИБО полный profile для разового ' +
+      'эксперимента. Оба сразу — ошибка. Пустое тело равно profileId=default.\n\n' +
+      'Готовые профили и их гипотезы — в GET /config/profiles.\n\n' +
+      'Читать в ответе надо tiers, а не passed: yield — выручка доходит до держателя, ' +
+      'economics — выручка есть, до держателя не доходит, pool — данных нет, ' +
+      'rejected — отсеян шлак-фильтром.',
   })
-  @ApiBody({ type: ProfileSelectionDto, required: false })
+  @ApiBody({
+    type: ProfileSelectionDto,
+    required: false,
+    examples: {
+      default: {
+        summary: 'default — базовый шлак-фильтр, то же что при сборке',
+        value: { profileId: 'default' },
+      },
+      yieldHunter: {
+        summary: 'yield-hunter — плачу за доходность держателя',
+        value: { profileId: 'yield-hunter' },
+      },
+      deepValue: {
+        summary: 'deep-value — плачу за дешевизну к выручке',
+        value: { profileId: 'deep-value' },
+      },
+    },
+  })
+  @ApiQuery({
+    name: 'includeCandidates',
+    required: false,
+    type: Boolean,
+    description:
+      'Вернуть сами монеты. По умолчанию false: 1300 строк — это мегабайты JSON, ' +
+      'на которых виснет страница Swagger, а не сервер. Смотрите funnel и tiers, ' +
+      'полный список — в GET /universe',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Сколько монет вернуть при includeCandidates=true. По умолчанию 50, максимум 500',
+  })
   @ApiOkResponse({ type: UniverseScreenResponseDto })
   async screen(
     @Body() body: ProfileSelectionDto = {},
+    @Query('includeCandidates') includeCandidates?: string,
+    @Query('limit') limit?: string,
   ): Promise<UniverseScreenResponseDto> {
-    return this.universe.screen(body as unknown as ProfileSelection);
+    const result = await this.universe.screen(body as unknown as ProfileSelection);
+    if (includeCandidates !== 'true') return { ...result, candidates: [] };
+    const size = Number(limit);
+    const take = Number.isFinite(size) && size > 0 ? Math.min(size, 500) : 50;
+    return { ...result, candidates: result.candidates.slice(0, take) };
   }
 
-  @Post('compare')
-  @ApiOperation({ summary: 'Сравнить два профиля на одном снимке без сети' })
+  @Post('compare')  
+  @ApiOperation({
+    summary: 'Сравнить два профиля на одной вселенной',
+    description:
+      'Показывает, кто прошёл в обоих отборах, кто только в левом, кто только в правом ' +
+      'и у кого сменился тир. Нужен, чтобы увидеть, чем результат обязан данным, ' +
+      'а чем — вашему мнению: если два разумных профиля дают полностью разный состав, ' +
+      'вы смотрите на свои настройки, а не на рынок.\n\n' +
+      'В поля left и right кладите строку с именем профиля: "default", "yield-hunter", ' +
+      '"deep-value". В сеть не ходит.',
+  })
   @ApiOkResponse({ type: UniverseCompareResponseDto })
   async compare(
     @Body() body: CompareUniverseDto,
@@ -80,8 +140,14 @@ export class UniverseController {
     );
   }
 
-  @Get('status')
-  @ApiOperation({ summary: 'Счётчик пересборки и сводка последнего состава' })
+  @Get('status')  @ApiOperation({
+    summary: 'Что сейчас происходит и что лежит в снимке',
+    description:
+      'state: idle — работы нет, running — идёт сборка или обновление чисел, ' +
+      'error — упало, причина в поле error. Проценты и остаток времени — в progress.\n\n' +
+      'Поля passed и tiers показывают отбор базового профиля. Для другого профиля ' +
+      'вызывайте POST /universe/screen.',
+  })
   @ApiOkResponse({ type: UniverseStatusDto })
   async status(): Promise<UniverseStatusDto> {
     return this.universe.status();
@@ -89,7 +155,13 @@ export class UniverseController {
 
   @Get('funnel')
   @ApiOperation({
-    summary: 'Воронка отсева: сколько кандидатов отпало на каждой проверке',
+    summary: 'Воронка отсева базового профиля',
+    description:
+      'На каждой проверке: сколько вошло, сколько отсеяно, сколько осталось. ' +
+      'Проверки идут по очереди, поэтому отсеянный на третьей до четвёртой не доходит — ' +
+      'число напротив проверки зависит от того, кто стоял раньше.\n\n' +
+      'Это воронка базового профиля, вшитая при сборке. Воронку любого другого — ' +
+      'в POST /universe/screen.',
   })
   @ApiOkResponse({ type: FunnelReportDto })
   async funnel(): Promise<FunnelReportDto> {
@@ -103,7 +175,14 @@ export class UniverseController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Состав вселенной с тирами и причинами отсева' })
+  @ApiOperation({
+    summary: 'Список монет с числами, тирами и причинами отсева',
+    description:
+      'Каждая строка — посчитанные кодом числа со ссылкой на источник и временем ' +
+      'обновления источника. По умолчанию только прошедшие базовый отбор; ' +
+      'passedOnly=false покажет и отсеянных с полем rejectReason — почему именно.\n\n' +
+      'Тиры и причины здесь — от базового профиля.',
+  })
   @ApiOkResponse({ type: UniverseCandidateDto, isArray: true })
   async list(@Query() query: UniverseQueryDto): Promise<UniverseCandidateDto[]> {
     const snapshot = await this.universe.latest();

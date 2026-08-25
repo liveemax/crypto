@@ -7,6 +7,7 @@ import { UniverseService } from '../universe/universe.service';
 import { UniverseCandidate } from '../universe/universe.types';
 import { CoingeckoService } from './coingecko.service';
 import { DefillamaService, LlamaFeeRow, protocolPageUrl } from './defillama.service';
+import { JobService } from '../jobs/job.service';
 
 export interface SnapshotOptions {
   offline?: boolean;
@@ -23,6 +24,7 @@ export class SnapshotService {
     private readonly defillama: DefillamaService,
     private readonly coingecko: CoingeckoService,
     private readonly universe: UniverseService,
+    private readonly jobs: JobService,
   ) {}
 
   /**
@@ -30,6 +32,15 @@ export class SnapshotService {
    * со списком — точечно, доливая строки в последний полный снапшот.
    */
   async build(tickers?: string[]): Promise<SnapshotRow[]> {
+    this.jobs.acquireOrFail('snapshot/refresh');
+    try {
+      return await this.buildInner(tickers);
+    } finally {
+      this.jobs.release('snapshot/refresh');
+    }
+  }
+
+  private async buildInner(tickers?: string[]): Promise<SnapshotRow[]> {
     const candidates = await this.universe.passed();
     if (candidates.length === 0) {
       throw new NotFoundException(

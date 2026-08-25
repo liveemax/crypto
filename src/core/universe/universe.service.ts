@@ -20,6 +20,7 @@ import {
   UniverseSnapshot,
   UniverseStatus,
 } from './universe.types';
+import { JobService } from '../jobs/job.service';
 
 const SNAPSHOT_NAME = 'universe-source';
 const DAY_MS = 86_400_000;
@@ -55,6 +56,7 @@ export class UniverseService {
     private readonly store: StoreService,
     private readonly builder: UniverseBuilder,
     private readonly filter: UniverseFilter,
+    private readonly jobs: JobService,
   ) {}
 
   /** Возвращает последний сохранённый состав вселенной или null. */
@@ -70,10 +72,11 @@ export class UniverseService {
     return Number.isFinite(built) ? Math.floor((Date.now() - built) / DAY_MS) : null;
   }
 
-  /** Возвращает кандидатов, прошедших шлак-фильтр. */
-  async passed(): Promise<UniverseCandidate[]> {
+  /** Возвращает кандидатов, прошедших отбор профиля; вшитые в снимок флаги не используются. */
+  async passed(profile: AnalysisProfile = DEFAULT_PROFILE): Promise<UniverseCandidate[]> {
     const snapshot = await this.latest();
-    return snapshot?.candidates.filter((item) => item.passed) ?? [];
+    if (!snapshot) return [];
+    return this.screenSnapshot(snapshot, profile).candidates.filter((item) => item.passed);
   }
 
   /** Применяет профиль к последнему снимку без сети и без изменения снимка. */
@@ -137,24 +140,111 @@ export class UniverseService {
   }
 
   /** Обновляет числа готового состава, сохраняя дату и участников вселенной. */
-  async refreshPrices(): Promise<UniverseScreenResult> {
+  async refreshPrices(): Promise<UniverseRefreshResult> {
+    const ageDays = await this.ageDays();
+    const busy = this.jobs.current;
+    if (busy) {
+      return {
+        started: false,
+        reason: 'already_running',
+        ageDays,
+        message:
+          `Уже идёт «${busy.name}», ${busy.elapsedSec} с. Одновременно выполняется ` +
+          'одна сетевая задача: лимит CoinGecko общий на процесс',
+      };
+    }
+    await this.requireLatest();
+
+    if (!this.jobs.tryAcquire('universe/prices')) {
+      return {
+        started: false,
+        reason: 'already_running',
+        ageDays,
+        message: 'Слот занят другой задачей. Проверьте GET /universe/status',
+      };
+    }
+    this.state = 'running';
+    this.lastError = null;
+    this.failures = 0;
+    this.startedAtMs = Date.now();
+    this.progress = {
+      ...idleProgress(),
+      step: 'prices',
+      label: 'Старт обновления чисел',
+      startedAt: new Date().toISOString(),
+    };
+
+    this.inFlight = this.rerunPrices().catch((error: unknown) => {
+      this.state = 'error';
+      this.lastError = error instanceof Error ? error.message : String(error);
+      this.progress = {
+        ...this.progress,
+        step: 'failed',
+        label: 'Прервано',
+        lastError: this.lastError,
+      };
+      this.logger.error(`Обновление чисел прервано: ${this.lastError}`);
+    }).finally(() => this.jobs.release('universe/prices'));
+
+    return {
+      started: true,
+      reason: 'forced',
+      ageDays,
+      message:
+        'Обновление чисел запущено в фоне: около 9 запросов и до минуты работы. ' +
+        'Ход — в GET /universe/status, результат — в POST /universe/screen',
+    };
+  }
+
+  /** Тянет свежие числа по готовому составу; участники и дата сборки не меняются. */
+  private async rerunPrices(): Promise<void> {
     const snapshot = await this.requireLatest();
+
+    this.report({
+      step: 'prices',
+      label: 'Рынок CoinGecko и три сводки комиссий DeFiLlama',
+      current: 0,
+      total: 1,
+      loaded: snapshot.candidates.length,
+      failed: false,
+      error: null,
+    });
     const output = await this.builder.refreshNumbers(snapshot.candidates);
-    const funnel = this.filter.apply(
-      output.candidates,
-      new Set(snapshot.excludedIds),
-      DEFAULT_PROFILE,
-    );
+
     const refreshed: UniverseSnapshot = {
       ...snapshot,
       sources: { ...snapshot.sources, ...output.sources },
       candidates: output.candidates,
       profileId: DEFAULT_PROFILE.id,
-      funnel,
+      funnel: this.filter.apply(
+        output.candidates,
+        new Set(snapshot.excludedIds),
+        DEFAULT_PROFILE,
+      ),
       warnings: [...new Set([...snapshot.warnings, ...output.warnings])],
     };
+
+    this.report({
+      step: 'save',
+      label: 'Сохранение снапшота',
+      current: 1,
+      total: 1,
+      loaded: refreshed.candidates.length,
+      failed: false,
+      error: null,
+    });
     await this.store.saveSnapshot(SNAPSHOT_NAME, refreshed);
-    return this.screenSnapshot(refreshed, DEFAULT_PROFILE);
+
+    this.state = 'idle';
+    this.progress = this.withElapsed({
+      ...this.progress,
+      step: 'done',
+      label: `Числа обновлены: ${refreshed.candidates.length} строк`,
+      current: 1,
+      total: 1,
+      percent: 100,
+    });
+    this.logger.log(this.progress.label);
   }
 
   /** Пересобирает состав вселенной, если он старше месяца; работа идёт в фоне. */
@@ -163,12 +253,15 @@ export class UniverseService {
   ): Promise<UniverseRefreshResult> {
     const ageDays = await this.ageDays();
 
-    if (this.state === 'running') {
+    const busy = this.jobs.current;
+    if (busy) {
       return {
         started: false,
         reason: 'already_running',
         ageDays,
-        message: `Пересборка уже идёт: ${this.progress.label} ${this.progress.current}/${this.progress.total}`,
+        message:
+          `Уже идёт «${busy.name}», ${busy.elapsedSec} с. Одновременно выполняется ` +
+          'одна сетевая задача: лимит CoinGecko общий на процесс',
       };
     }
 
@@ -185,6 +278,14 @@ export class UniverseService {
     }
 
     const reason = options.force ? 'forced' : ageDays === null ? 'never_built' : 'stale';
+    if (!this.jobs.tryAcquire('universe/refresh')) {
+      return {
+        started: false,
+        reason: 'already_running',
+        ageDays,
+        message: 'Слот занят другой задачей. Проверьте GET /universe/status',
+      };
+    }
     this.state = 'running';
     this.lastError = null;
     this.failures = 0;
@@ -201,7 +302,7 @@ export class UniverseService {
       this.lastError = error instanceof Error ? error.message : String(error);
       this.progress = { ...this.progress, step: 'failed', label: 'Прервано', lastError: this.lastError };
       this.logger.error(`Пересборка вселенной прервана: ${this.lastError}`);
-    });
+    }).finally(() => this.jobs.release('universe/refresh'));
 
     return {
       started: true,
@@ -355,11 +456,17 @@ export class UniverseService {
     if (typeof reference === 'string') return this.requireBuiltin(reference);
     if ('screen' in reference) return this.parseCustomProfile(reference);
 
-    if (reference.profileId && reference.profile) {
-      throw new BadRequestException('Передайте profileId или profile, но не оба сразу');
+    // Клиенты присылают null и пустую строку вместо отсутствия поля; это не «оба сразу».
+    const profileId = reference.profileId?.trim() || null;
+    const custom = reference.profile ?? null;
+    if (profileId !== null && custom !== null) {
+      throw new BadRequestException(
+        'Передайте что-то одно: profileId для готового профиля или profile для разового. ' +
+          'Готовые: default, yield-hunter, deep-value.',
+      );
     }
-    if (reference.profile) return this.parseCustomProfile(reference.profile);
-    return this.requireBuiltin(reference.profileId ?? DEFAULT_PROFILE.id);
+    if (custom !== null) return this.parseCustomProfile(custom);
+    return this.requireBuiltin(profileId ?? DEFAULT_PROFILE.id);
   }
 
   private requireBuiltin(id: string): AnalysisProfile {

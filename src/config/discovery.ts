@@ -19,6 +19,17 @@ export const DISCOVERY = {
   runRate30dToYear: 12.17,
   /** Расхождение своей и заявленной капитализации выше порога попадает в warnings. */
   maxMcapDivergencePct: 5,
+  /**
+   * Выручка к TVL выше порога — почти всегда артефакт склейки: у Canton вышло
+   * 9647% от TVL. Число не обнуляется, но попадает в warnings: молча пропустить
+   * его значит отдать лидерство сектора ошибке источника.
+   */
+  maxRevenuePerTvlPct: 200,
+  /**
+   * Ниже этого TVL группа протоколов не участвует в склейке по тикеру.
+   * Совпадение тикера — самый слабый признак, и мусорным записям он не даётся.
+   */
+  minSymbolMatchTvlUsd: 1_000_000,
 
   /** Ниже этого суточного объёма из позиции не выйти по разумной цене. */
   minVol24hUsd: 500_000,
@@ -40,7 +51,14 @@ export const DISCOVERY = {
     'liquid-staking-tokens',
     'bridged-tokens',
     'tokenized-gold',
-    'tokenized-treasury-bills',
+    // tokenized-t-bills есть в /coins/categories/list, но /coins/markets по нему
+    // отдаёт пустой массив. Родительская категория работает: 14 монет.
+    'tokenized-treasuries',
+    // Долговая бумага, а не бизнес: FIGR_HELOC на 22.5 млрд.
+    'tokenized-private-credit',
+    // Доходность копится в цене, поэтому коридор ±1.5% вокруг доллара их не
+    // ловит: ONYC и USYC торгуются по 1.14 и проходили отбор как живые токены.
+    'yield-bearing-stablecoins',
   ],
   /** Мемкоины отсекаются отдельным флагом: решение спорное, включается одним местом. */
   excludeMemecoins: true,
@@ -53,8 +71,9 @@ export const DISCOVERY = {
   excludedLlamaCategories: ['CEX', 'Bridge', 'Canonical Bridge', 'Chain Bridge'],
 
   /** Ручной добавок к отсеву — то, что не попало ни в одну категорию. */
-  excludedCoingeckoIds: ['weth', 'wrapped-beacon-eth'],
-
+  // figure-heloc — токенизированная кредитная линия, цена 1.04 уходит из-под
+  // коридора привязки, а категории CoinGecko её не ловят.
+  excludedCoingeckoIds: ['weth', 'wrapped-beacon-eth', 'figure-heloc'],
   /**
    * Цена в этом коридоре вокруг 1 USD считается привязкой.
    * Страховка на случай, если токена нет ни в реестре стейблкоинов, ни в категориях.
@@ -71,6 +90,8 @@ export const DERIVATIVE_NAME = /\b(wrapped|bridged|staked|restaked|peg)\b/i;
 /** Ручные поправки соответствия «монета CoinGecko → протоколы DeFiLlama». */
 export const SLUG_OVERRIDES: Record<string, string[]> = {
   hyperliquid: ['hyperliquid'],
+  // Версии протокола не склеиваются по gecko_id: v3 у DeFiLlama без gecko_id,
+  // и без оверрайда выручка Aave занижена на порядок.
   sky: ['sky-lending', 'maker'],
   'lido-dao': ['lido'],
   havven: ['synthetix'],

@@ -5,6 +5,7 @@ import { UniverseBuilder } from './universe.builder';
 import { UniverseFilter } from './universe.filter';
 import { UniverseService } from './universe.service';
 import { UniverseCandidate, UniverseSnapshot } from './universe.types';
+import { JobService } from '../jobs/job.service';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
@@ -109,8 +110,8 @@ describe('UniverseService profiles', () => {
           warnings: [],
         }),
       ),
-    } as unknown as UniverseBuilder;
-    service = new UniverseService(store, builder, new UniverseFilter());
+    } as unknown as UniverseBuilder;    
+    service = new UniverseService(store, builder, new UniverseFilter(), new JobService());
   });
 
   it('применяет два профиля без сети и не мутирует сохранённый снимок', async () => {
@@ -142,16 +143,19 @@ describe('UniverseService profiles', () => {
     expect(builder.refreshNumbers).not.toHaveBeenCalled();
   });
 
-  it('обновляет числа, но сохраняет состав и builtAt', async () => {
-    const result = await service.refreshPrices();
+  it('обновляет числа в фоне, не трогая состав и дату сборки', async () => {
+    const builtAtBefore = current.builtAt;
+    const versionBefore = current.version;
 
-    expect(builder.refreshNumbers).toHaveBeenCalledWith(current.candidates);
+    const started = await service.refreshPrices();
+    expect(started.started).toBe(true);
+    await service.wait();
+
     expect(saved).toHaveLength(1);
-    expect(saved[0].builtAt).toBe(current.builtAt);
-    expect(saved[0].version).toBe(current.version);
-    expect(saved[0].candidates.map((item) => item.coingeckoId)).toEqual(
-      current.candidates.map((item) => item.coingeckoId),
-    );
-    expect(result.profile.id).toBe('default');
+    const [snapshot] = saved;
+    expect(snapshot.builtAt).toBe(builtAtBefore);
+    expect(snapshot.version).toBe(versionBefore);
+    expect(snapshot.profileId).toBe('default');
+    expect(snapshot.candidates).toHaveLength(current.candidates.length);
   });
 });

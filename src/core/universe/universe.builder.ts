@@ -22,6 +22,20 @@ interface ProtocolGroup {
   tvlUsd: number | null;
   bestTvl: number;
   isChain: boolean;
+  /** Каким признаком нашли монету: прямой gecko_id или совпадение тикера. */
+  matchedBy: 'gecko_id' | 'symbol';
+  /** Сколько версий протокола вошло в группу — индикатор частичной склейки. */
+  versions: number;
+}
+
+/** Группа версий до того, как ей подобрана монета CoinGecko. */
+interface RawGroup {
+  slugs: string[];
+  category: string | null;
+  tvlUsd: number | null;
+  bestTvl: number;
+  geckoId: string | null;
+  symbols: Set<string>;
 }
 
 interface FeeTotals {
@@ -78,7 +92,17 @@ export class UniverseBuilder {
     if (markets.rows.length === 0) {
       throw new Error('CoinGecko не вернул ни одной строки рынка');
     }
-    const loaded = markets.rows.length;
+    // Недобор состава — отказ, а не примечание: обрезанная вселенная выглядит
+    // собранной, а через месяц сравнивается с полной как с сопоставимой.
+    if (markets.rows.length < topN) {
+      throw new Error(
+        `Запрошено ${topN} монет, загружено ${markets.rows.length}. ` +
+          `Причина: ${markets.errors.join('; ') || 'страницы кончились раньше'}. ` +
+          'Успешные страницы лежат в суточном кэше — повторный ' +
+          'POST /universe/refresh?force=true дотянет только недостающие.',
+      );
+    }
+    const loaded = markets.rows.length; 
 
     const excluded = await this.loadExcludedIds(loaded, warnings, onProgress);
 
@@ -125,27 +149,63 @@ export class UniverseBuilder {
 
     onProgress?.(step('join', 'Склейка источников по gecko_id', 0, 1, loaded));
 
-    const groups = groupProtocols(protocols);
+    // Тикер → монета. Дубли тикеров выбрасываются целиком: угадывать, какой из
+    // двух одноимённых токенов имелся в виду, опаснее, чем не склеить вовсе.
+    const tickerIndex = new Map<string, string>();
+    const ambiguous = new Set<string>();
+    for (const row of markets.rows) {
+      const ticker = row.ticker.toUpperCase();
+      if (tickerIndex.has(ticker)) ambiguous.add(ticker);
+      tickerIndex.set(ticker, row.coingeckoId);
+    }
+    for (const ticker of ambiguous) tickerIndex.delete(ticker);
+
+    // Оракулы, мосты и сервисы зарабатывают, ничего не удерживая: у Chainlink
+    // TVL ноль в обеих записях. Порог по TVL терял этот класс целиком, поэтому
+    // пропуском к склейке по тикеру служит ещё и наличие строки в сводке комиссий.
+    const earningSlugs = new Set<string>();
+    for (const row of fees.get('dailyFees') ?? []) {
+      if (row.slug) earningSlugs.add(row.slug);
+    }
+
+    const groups = groupProtocols(protocols, tickerIndex, earningSlugs, warnings);
     for (const chain of chains ?? []) {
       if (!chain.geckoId) continue;
       const slug = slugify(chain.name);
       const current = groups.get(chain.geckoId);
       // Сеть дополняет протокол того же токена, а не затирает его.
       groups.set(chain.geckoId, {
-        slugs: [...(current?.slugs ?? []), slug],
+        // Протокол и сеть часто носят один слаг. Дубль не удваивает выручку
+        // кандидата, но SnapshotRow суммирует по этому массиву — и там удваивает.
+        slugs: [...new Set([...(current?.slugs ?? []), slug])],
         category: current?.category ?? 'Chain',
         tvlUsd: addNullable(current?.tvlUsd ?? null, chain.tvlUsd),
         bestTvl: Math.max(current?.bestTvl ?? -1, chain.tvlUsd ?? 0),
         isChain: true,
+        matchedBy: current?.matchedBy ?? 'gecko_id',
+        versions: (current?.versions ?? 0) + 1,
       });
+    }
+
+    // Карты строятся из групп, а не из отдельных протоколов. Иначе выручка
+    // aave-v3 и uniswap-v3 не находит свою монету — у них пустой gecko_id.
+    // Слаги из SLUG_OVERRIDES кладутся сюда же: раньше оверрайд давал слаги
+    // кандидату, но комиссии по ним никто не искал, и HYPE оставался без чисел.
+    const slugToGecko = new Map<string, string>();
+    for (const [geckoId, group] of groups) {
+      for (const slug of group.slugs) slugToGecko.set(slug, geckoId);
+    }
+    for (const [geckoId, slugs] of Object.entries(SLUG_OVERRIDES)) {
+      for (const slug of slugs) slugToGecko.set(slug, geckoId);
     }
 
     const geckoBySlug = new Map<string, string>();
     const geckoByProtocolId = new Map<string, string>();
     for (const protocol of protocols) {
-      if (!protocol.geckoId) continue;
-      geckoBySlug.set(protocol.slug, protocol.geckoId);
-      geckoByProtocolId.set(protocol.id, protocol.geckoId);
+      const geckoId = slugToGecko.get(protocol.slug);
+      if (!geckoId) continue;
+      geckoBySlug.set(protocol.slug, geckoId);
+      geckoByProtocolId.set(protocol.id, geckoId);
     }
     for (const chain of chains ?? []) {
       if (chain.geckoId) geckoBySlug.set(slugify(chain.name), chain.geckoId);
@@ -252,16 +312,29 @@ export class UniverseBuilder {
     if (DISCOVERY.excludeMemecoins) categories.push(DISCOVERY.memecoinCategory);
 
     let applied = 0;
+    const failed: string[] = [];
+    const broken: string[] = [];
     for (const [index, category] of categories.entries()) {
       onProgress?.(
         step('categories', `Категория ${category}`, index, categories.length, loaded),
       );
-      const ids = await this.coingecko.getCategoryIds(category);
+      const result = await this.coingecko.getCategoryIds(category);
+      const ids = result.ids;
       if (ids === null || ids.length === 0) {
-        warnings.push(
-          `ОТСЕВ НЕ ПРИМЕНЁН: категория ${category} вернула ` +
-            `${ids === null ? 'ошибку' : 'пустой список'}`,
-        );
+        // Пустой список при успешном ответе — не сбой: у CoinGecko неизвестная
+        // категория отдаёт 200 и пустой массив. Повтор такое не лечит.
+        const wrongId =
+          ids !== null ||
+          (result.status !== null && result.status >= 400 && result.status !== 429);
+        const why =
+          ids !== null
+            ? 'HTTP 200 и пустой список — /coins/markets не отдаёт состав этой ' +
+              'категории. Идентификатор может быть верным: сверьте и по ' +
+              '/coins/categories/list, и прямым запросом markets'
+            : `HTTP ${result.status ?? 'нет ответа'} — источник недоступен, поможет повтор`;
+        if (wrongId) broken.push(`${category}: ${why}`);
+        else failed.push(`${category}: ${why}`);
+        warnings.push(`ОТСЕВ НЕ ПРИМЕНЁН: категория ${category}, ${why}`);
         continue;
       }
       applied += 1;
@@ -278,10 +351,20 @@ export class UniverseBuilder {
       );
     }
 
-    if (applied === 0) {
-      warnings.push(
-        'Ни одна категория CoinGecko не загрузилась: отсев держится только на ' +
-          'реестре стейблкоинов и на проверках цены и названия',
+    if (broken.length > 0) {
+      throw new Error(
+        `Категории не дали состав: ${broken.join('; ')}. Повтор не поможет — ` +
+          'нужна замена идентификатора в DISCOVERY.excludedCoingeckoCategories ' +
+          'или осознанное удаление строки. Держать мёртвую категорию нельзя: ' +
+          'отсев, которого нет, выглядит работающим.',
+      );
+    }
+    if (failed.length > 0) {
+      throw new Error(
+        `Источник не отдал категории: ${failed.join('; ')}. Вселенная с непримененным ` +
+          'отсевом выглядит собранной, но содержит мемкоины и обёртки. Загруженные ' +
+          'категории лежат в суточном кэше — повторный POST /universe/refresh?force=true ' +
+          'дотянет только упавшие и займёт секунды.',
       );
     }
     warnings.push(`Всего в списке исключений: ${excluded.size}`);
@@ -378,23 +461,117 @@ function step(
 }
 
 /** Собирает версии одного протокола под общий gecko_id: aave-v2 и aave-v3 — это Aave. */
-function groupProtocols(protocols: LlamaProtocol[]): Map<string, ProtocolGroup> {
+function groupProtocols(
+  protocols: LlamaProtocol[],
+  tickerIndex: Map<string, string>,
+  earningSlugs: ReadonlySet<string>,
+  warnings: string[],
+): Map<string, ProtocolGroup> {
   const excludedCategories = DISCOVERY.excludedLlamaCategories as readonly string[];
-  const groups = new Map<string, ProtocolGroup>();
+  const raw = new Map<string, RawGroup>();
 
+  // Версия протокола редко знает свой gecko_id: у Aave он есть только у мёртвой
+  // v2 с TVL 111 млн, тогда как живая v3 держит 17.3 млрд. Группировка по
+  // parentProtocol переносит найденный идентификатор на все версии сразу.
   for (const protocol of protocols) {
-    if (!protocol.geckoId) continue;
     if (protocol.category && excludedCategories.includes(protocol.category)) continue;
 
-    const current = groups.get(protocol.geckoId);
+    const key = protocol.parentProtocol ?? protocol.slug;
+    const current = raw.get(key);
     const tvl = protocol.tvlUsd ?? 0;
-    groups.set(protocol.geckoId, {
+    const symbols = current?.symbols ?? new Set<string>();
+    if (protocol.symbol) symbols.add(protocol.symbol.toUpperCase());
+
+    raw.set(key, {
       slugs: [...(current?.slugs ?? []), protocol.slug],
-      category: tvl > (current?.bestTvl ?? -1) ? protocol.category : (current?.category ?? null),
+      category:
+        tvl > (current?.bestTvl ?? -1) ? protocol.category : (current?.category ?? null),
       tvlUsd: addNullable(current?.tvlUsd ?? null, protocol.tvlUsd),
       bestTvl: Math.max(current?.bestTvl ?? -1, tvl),
-      isChain: current?.isChain ?? false,
+      geckoId: current?.geckoId ?? protocol.geckoId,
+      symbols,
     });
+  }
+
+  const taken = new Set<string>();
+  for (const group of raw.values()) if (group.geckoId) taken.add(group.geckoId);
+
+  // Uniswap, Morpho, Ethena и Ondo не знают gecko_id ни в одной версии —
+  // наследовать не от кого, остаётся тикер. Тикер принадлежит группе версий,
+  // а не строке: AAVE носят v2, v3, v4 и horizon, и это один проект.
+  // Конфликт — когда один тикер заявляют две разные группы.
+  const eligible = [...raw.entries()].filter(
+    ([, group]) =>
+      group.geckoId === null &&
+      ((group.tvlUsd ?? 0) >= DISCOVERY.minSymbolMatchTvlUsd ||
+        group.slugs.some((slug) => earningSlugs.has(slug))),
+  );
+
+  const claims = new Map<string, Set<string>>();
+  for (const [key, group] of eligible) {
+    for (const symbol of group.symbols) {
+      const geckoId = tickerIndex.get(symbol);
+      if (!geckoId || taken.has(geckoId)) continue;
+      claims.set(symbol, (claims.get(symbol) ?? new Set<string>()).add(key));
+    }
+  }
+
+  const conflicts: string[] = [];
+  const contested = new Set<string>();
+  for (const [symbol, keys] of claims) {
+    if (keys.size > 1) {
+      contested.add(symbol);
+      conflicts.push(`${symbol} → ${[...keys].join(' / ')}`);
+    }
+  }
+
+  const bySymbol = new Map<string, string>();
+  for (const [key, group] of eligible) {
+    const found = new Set<string>();
+    for (const symbol of group.symbols) {
+      if (contested.has(symbol)) continue;
+      const geckoId = tickerIndex.get(symbol);
+      if (geckoId && !taken.has(geckoId)) found.add(geckoId);
+    }
+    if (found.size === 1) bySymbol.set(key, [...found][0]);
+    else if (found.size > 1) conflicts.push(`группа ${key} → ${[...found].join(' / ')}`);
+  }
+
+  const groups = new Map<string, ProtocolGroup>();
+  const counts = { gecko_id: 0, symbol: 0 };
+
+  for (const [key, group] of raw) {
+    const geckoId = group.geckoId ?? bySymbol.get(key) ?? null;
+    if (!geckoId) continue;
+    const matchedBy: 'gecko_id' | 'symbol' = group.geckoId ? 'gecko_id' : 'symbol';
+    counts[matchedBy] += 1;
+
+    const current = groups.get(geckoId);
+    const slugs = [...new Set([...(current?.slugs ?? []), ...group.slugs])];
+    groups.set(geckoId, {
+      slugs,
+      category:
+        group.bestTvl > (current?.bestTvl ?? -1)
+          ? group.category
+          : (current?.category ?? null),
+      tvlUsd: addNullable(current?.tvlUsd ?? null, group.tvlUsd),
+      bestTvl: Math.max(current?.bestTvl ?? -1, group.bestTvl),
+      isChain: current?.isChain ?? false,
+      matchedBy: current?.matchedBy ?? matchedBy,
+      versions: slugs.length,
+    });
+  }
+
+  const multi = [...groups.values()].filter((group) => group.versions > 1).length;
+  warnings.push(
+    `Склейка DeFiLlama: по gecko_id ${counts.gecko_id}, по тикеру ${counts.symbol}, ` +
+      `групп с несколькими версиями ${multi}`,
+  );
+  if (conflicts.length > 0) {
+    warnings.push(
+      `Тикер не склеен из-за неоднозначности (${conflicts.length}): ` +
+        conflicts.slice(0, 20).join('; '),
+    );
   }
   return groups;
 }
@@ -405,14 +582,21 @@ function aggregateFees(
   geckoByProtocolId: Map<string, string>,
   geckoBySlug: Map<string, string>,
 ): Map<string, FeeTotals> {
-  const result = new Map<string, FeeTotals>();
-  const seen = new Set<string>();
-
+  // Слаг у DeFiLlama — уникальный ключ страницы. Две записи с одним слагом это
+  // один протокол, показанный дважды: обычно строкой сети и строкой протокола.
+  // Прежний ключ из пары protocolId|slug их не ловил, и выручка складывалась
+  // сама с собой — 28 сетей во вселенной имели дубли слагов.
+  const unique = new Map<string, LlamaFeeRow>();
   for (const row of rows) {
-    const key = `${row.protocolId ?? ''}|${row.slug ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const key = row.slug ?? row.protocolId;
+    if (!key) continue;
+    const current = unique.get(key);
+    if (!current || (row.total1y ?? -1) > (current.total1y ?? -1)) unique.set(key, row);
+  }
 
+  const result = new Map<string, FeeTotals>();
+
+  for (const row of unique.values()) {
     const geckoId =
       (row.protocolId ? geckoByProtocolId.get(row.protocolId) : undefined) ??
       (row.slug ? geckoBySlug.get(row.slug) : undefined);
@@ -456,9 +640,7 @@ function toCandidate(
     ? 'override'
     : group?.isChain
       ? 'chain'
-      : group
-        ? 'gecko_id'
-        : 'none';
+      : (group?.matchedBy ?? 'none');
 
   const feeTotals = totals.get('dailyFees')?.get(row.coingeckoId) ?? null;
   const revenueTotals = totals.get('dailyRevenue')?.get(row.coingeckoId) ?? null;
@@ -520,7 +702,7 @@ function toCandidate(
     pRev: ratio(mcapCalcUsd, revenue12mUsd),
     pFees: ratio(mcapCalcUsd, fees12mUsd),
     fdvRev: ratio(row.fdvUsd, revenue12mUsd),
-    revenuePerTvlPct: pct(revenue12mUsd, group?.tvlUsd ?? null),
+    revenuePerTvlPct: tvlYield(revenue12mUsd, group?.tvlUsd ?? null, row.ticker, warnings),
     tier: 'pool',
     passed: false,
     rejectedAt: null,
@@ -543,6 +725,27 @@ function ratio(numerator: number | null, denominator: number | null): number | n
   return round(div(numerator, denominator), 2);
 }
 
+/**
+ * Выручка к TVL. Число не обнуляется — при малом TVL оно бывает настоящим, —
+ * но абсурдная величина уходит в warnings с обеими исходными цифрами.
+ * У Canton вышло 9647%, и с таким pRev он возглавил бы рейтинг сектора.
+ */
+function tvlYield(
+  revenue: number | null,
+  tvl: number | null,
+  ticker: string,
+  warnings: string[],
+): number | null {
+  const value = pct(revenue, tvl);
+  if (value !== null && value > DISCOVERY.maxRevenuePerTvlPct) {
+    warnings.push(
+      `${ticker}: выручка ${Math.round(revenue ?? 0)} USD при TVL ${Math.round(tvl ?? 0)} USD, ` +
+        `${Math.round(value)}% — похоже на склейку чужих комиссий, проверьте вручную`,
+    );
+  }
+  return value;
+}
+
 function pct(part: number | null, whole: number | null): number | null {
   if (part === null || whole === null || whole <= 0) return null;
   return round(mul(div(part, whole), 100), 2);
@@ -561,3 +764,4 @@ function normalizeSector(category: string | null): string | null {
 function byMcapDesc(left: UniverseCandidate, right: UniverseCandidate): number {
   return (right.mcapCalcUsd ?? -1) - (left.mcapCalcUsd ?? -1);
 }
+

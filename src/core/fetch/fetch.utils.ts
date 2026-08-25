@@ -7,6 +7,8 @@ export interface FetchResult<T = unknown> {
   status: number | null;
   data: T | null;
   error: string | null;
+  /** Сколько источник просит подождать: заголовок Retry-After, если он был. */
+  retryAfterMs: number | null;
 }
 
 export interface FetchOptions {
@@ -34,7 +36,7 @@ export async function fetchJson<T = unknown>(
   url: string,
   options: FetchOptions = {},
 ): Promise<FetchResult<T>> {
-  const attempts = options.attempts ?? 3;
+  const attempts = options.attempts ?? 5;
   const timeoutMs = options.timeoutMs ?? 20_000;
   const host = hostOf(url);
   const minGapMs = options.minGapMs ?? HOST_GAP_MS[host] ?? 1_000;
@@ -44,6 +46,7 @@ export async function fetchJson<T = unknown>(
     status: null,
     data: null,
     error: 'Запрос не выполнялся',
+    retryAfterMs: null,
   };
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -56,8 +59,9 @@ export async function fetchJson<T = unknown>(
       last.status === null || last.status === 429 || last.status >= 500;
     if (!retriable || attempt === attempts - 1) return last;
 
-    const factor = last.status === 429 ? 4 : 1;
-    await delay(factor * 2 ** attempt * minGapMs);
+    // Источник сам называет паузу. Своя формула — только когда он молчит.
+    const backoff = (last.status === 429 ? 4 : 1) * 2 ** attempt * minGapMs;
+    await delay(Math.min(Math.max(last.retryAfterMs ?? backoff, backoff), 120_000));
   }
 
   return last;
@@ -83,6 +87,7 @@ async function requestOnce<T>(
         status: response.status,
         data: null,
         error: `HTTP ${response.status} ${response.statusText}`,
+        retryAfterMs: retryAfterMs(response.headers.get('retry-after')),
       };
     }
     return {
@@ -90,6 +95,7 @@ async function requestOnce<T>(
       status: response.status,
       data: (await response.json()) as T,
       error: null,
+      retryAfterMs: null,
     };
   } catch (error: unknown) {
     return {
@@ -97,8 +103,19 @@ async function requestOnce<T>(
       status: null,
       data: null,
       error: error instanceof Error ? error.message : String(error),
+      retryAfterMs: null,
     };
   }
+}
+
+/** Разбирает Retry-After: секунды или дата. null — заголовка нет или он мусорный. */
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+  const at = Date.parse(header);
+  if (Number.isFinite(at)) return Math.max(0, at - Date.now());
+  return null;
 }
 
 /** Сериализует обращения к одному хосту и выдерживает между ними паузу. */

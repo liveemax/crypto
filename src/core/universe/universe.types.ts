@@ -40,7 +40,7 @@ export interface UniverseCandidate {
 
   defillamaSlugs: string[];
   sector: string | null;
-  matchedBy: MatchSource;
+  matchedBy: MatchSource | 'symbol';
   tvlUsd: number | null;
   tvlSource: string | null;
 
@@ -98,7 +98,8 @@ export type UniverseStep =
   | 'protocols'
   | 'chains'
   | 'fees'
-  | 'join'
+  | 'prices'
+  | 'join'  
   | 'filter'
   | 'save'
   | 'done'

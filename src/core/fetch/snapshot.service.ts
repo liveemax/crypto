@@ -82,14 +82,24 @@ export class SnapshotService {
     return built;
   }
 
-  /** Создаёт контекст агента на основе последнего локального снапшота. */
+  /**
+   * Создаёт контекст агента: строки снапшота плюс кандидат вселенной со всеми
+   * посчитанными метриками. Агенты не пересчитывают то, что уже посчитано.
+   */
   async buildContext(
     ticker: string,
     options: SnapshotOptions = {},
   ): Promise<AgentContext> {
     const row = await this.getRow(ticker, options);
     const snapshot = await this.store.loadSnapshot<SnapshotRow[]>(SNAPSHOT_NAME);
-    return { snapshot: snapshot ?? [row] };
+    const universe = await this.universe.latest();
+    const normalized = ticker.trim().toUpperCase();
+
+    return {
+      snapshot: snapshot ?? [row],
+      candidate: universe?.candidates.find((item) => item.ticker === normalized),
+      universeVersion: universe?.version ?? null,
+    };
   }
 
   /** Возвращает последний сохранённый снапшот. */
@@ -150,6 +160,20 @@ export class SnapshotService {
       const primarySlug = candidate.defillamaSlugs[0] ?? null;
 
       const row: SnapshotRow = {
+        mcapCalcUsd:
+          priceUsd !== null && circulating !== null
+            ? round(mul(priceUsd, circulating), 2)
+            : null,
+        asOfMarket: market?.asOf ?? null,
+        asOfFees: asOf,
+        asOfTvl: asOf,
+        revenueBasis:
+          revenue1y !== null
+            ? 'reported_1y'
+            : revenue30d !== null
+              ? 'run_rate_30d'
+              : 'none',
+        universeVersion: version,
         ticker: candidate.ticker,
         name: candidate.name,
         sector: candidate.sector ?? 'unknown',
@@ -172,20 +196,7 @@ export class SnapshotService {
         errors,
       };
 
-      // Поля из types.patch.ts: применяются после утверждения правки контракта.
-      return Object.assign(row, {
-        mcapCalcUsd: row.mcapUsd,
-        asOfMarket: market?.asOf ?? null,
-        asOfFees: asOf,
-        asOfTvl: asOf,
-        revenueBasis:
-          revenue1y !== null
-            ? 'reported_1y'
-            : revenue30d !== null
-              ? 'run_rate_30d'
-              : 'none',
-        universeVersion: version,
-      });
+      return row;
     });
   }
 }

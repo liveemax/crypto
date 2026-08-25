@@ -161,6 +161,8 @@ export class UniverseService {
       topN,
       sources: output.sources,
       candidates: output.candidates,
+      excludedIds: [...output.excluded].sort(),
+      profileId: 'default',
       funnel,
       warnings: output.warnings,
     };

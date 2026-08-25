@@ -26,7 +26,7 @@ function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidat
     turnoverPct: 5.33,
     floatPct: 93.75,
     fdvToMcap: 1.07,
-    defillamaSlugs:['aave-v3'],
+    defillamaSlugs: ['aave-v3'],
     sector: 'lending',
     matchedBy: 'gecko_id',
     tvlUsd: 20_000_000_000,
@@ -180,6 +180,21 @@ describe('SnapshotService', () => {
     expect(rows).toHaveLength(1);
     expect(saved[0].map((row) => row.ticker).sort()).toEqual(['AAVE', 'MORPHO']);
     expect(saved[0].find((row) => row.ticker === 'AAVE')?.name).toBe('Aave');
+  });
+
+  it('кладёт кандидата вселенной в контекст агента', async () => {
+    (universe.latest as jest.Mock).mockResolvedValue({
+      version: '2026-08-24',
+      candidates: [candidate()],
+    });
+    (store.loadSnapshot as jest.Mock).mockResolvedValue([
+      { ticker: 'AAVE', name: 'Aave' } as SnapshotRow,
+    ]);
+
+    const ctx = await service.buildContext('aave');
+
+    expect(ctx.candidate?.holdersRevenue12mUsd).toBe(50_000_000);
+    expect(ctx.universeVersion).toBe('2026-08-24');
   });
 
   it('отказывает по токену, отсеянному воронкой вселенной', async () => {

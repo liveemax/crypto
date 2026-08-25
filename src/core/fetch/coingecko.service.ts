@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DISCOVERY } from '../../config/discovery';
 import { StoreService } from '../store/store.service';
 import { chunk, fetchJson, isRecord, nullableNumber } from './fetch.utils';
-
+import { DISCOVERY } from '../../config/discovery';
 const BASE = 'https://api.coingecko.com/api/v3';
 
 export interface CoinMarket {
@@ -55,6 +54,26 @@ export class CoingeckoService {
         `vs_currency=usd&order=market_cap_desc&per_page=${DISCOVERY.pageSize}` +
         `&page=${page}&sparkline=false&locale=en`;
       const sourceUrl = `${BASE}/coins/markets?${query}`;
+
+      // Единственный источник, который раньше не кэшировался: даже честная
+      // пересборка тянула все страницы рынка заново.
+      const cacheKey = `markets-p${page}-s${DISCOVERY.pageSize}`;
+      const cached = await this.store.cacheGet<CoinMarket[]>('coingecko', cacheKey);
+      if (cached) {
+        rows.push(...cached);
+        onPage?.({
+          page,
+          pages,
+          rowsOnPage: cached.length,
+          loaded: rows.length,
+          ok: true,
+          status: null,
+          error: null,
+        });
+        if (cached.length === 0) break;
+        continue;
+      }
+
       const response = await fetchJson<unknown>(withKey(sourceUrl));
 
       if (!response.ok || !Array.isArray(response.data)) {
@@ -86,14 +105,14 @@ export class CoingeckoService {
 
       consecutiveFailures = 0;
       await this.store.saveRaw('coingecko-markets', `page-${page}`, response.data);
-      let rowsOnPage = 0;
+      const parsed: CoinMarket[] = [];
       for (const item of response.data) {
         const row = toMarket(item, sourceUrl);
-        if (row) {
-          rows.push(row);
-          rowsOnPage += 1;
-        }
+        if (row) parsed.push(row);
       }
+      await this.store.cachePut('coingecko', cacheKey, parsed);
+      rows.push(...parsed);
+      const rowsOnPage = parsed.length;
       onPage?.({
         page,
         pages,

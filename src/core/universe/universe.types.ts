@@ -138,6 +138,10 @@ export interface UniverseSnapshot {
   topN: number;
   sources: Record<string, string>;
   candidates: UniverseCandidate[];
+  /** Идентификаторы из реестров исключений: нужны для повторного отбора без сети. */
+  excludedIds: string[];
+  /** Профиль, которым считался funnel в момент сборки. */
+  profileId: string;
   funnel: FunnelReport;
   /** Что не сошлось: пустые страницы, расхождения, незаматченные монеты. */
   warnings: string[];

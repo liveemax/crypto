@@ -1,3 +1,5 @@
+import { UniverseCandidate } from './universe/universe.types';
+
 export interface Metric {
   value: number | string | null;
   unit: string;
@@ -42,10 +44,27 @@ export interface SnapshotRow {
   feesSource: string | null;
   tvlSource: string | null;
   errors: string[];
+
+  /** Капитализация, посчитанная кодом: price × circulating. */
+  mcapCalcUsd?: number | null;
+  /** Время обновления рыночных данных на стороне CoinGecko. */
+  asOfMarket?: string | null;
+  /** Время обновления выручки на стороне DeFiLlama. */
+  asOfFees?: string | null;
+  /** Время обновления TVL на стороне DeFiLlama. */
+  asOfTvl?: string | null;
+  /** Основание расчёта выручки за 12 месяцев. */
+  revenueBasis?: 'reported_1y' | 'run_rate_30d' | 'none';
+  /** Версия вселенной, в составе которой собрана строка. */
+  universeVersion?: string | null;
 }
 
 export interface AgentContext {
   snapshot: SnapshotRow[];
+  /** Кандидат вселенной со всеми посчитанными метриками и источниками. */
+  candidate?: UniverseCandidate;
+  /** Версия вселенной: перцентили сектора сравнимы только внутри неё. */
+  universeVersion?: string | null;
   docsText?: string;
   docsSources?: string[];
   priorResults?: Record<string, AgentResult>;
@@ -61,19 +80,4 @@ export interface Agent {
   readonly needsLlm: boolean;
   readonly needs: (keyof SnapshotRow)[];
   run(token: string, row: SnapshotRow, ctx: AgentContext): Promise<AgentResult>;
-}
-
-export interface SnapshotRowExtension {
-  /** Капитализация, посчитанная кодом: price × circulating. */
-  mcapCalcUsd?: number | null;
-  /** Время обновления рыночных данных на стороне CoinGecko. */
-  asOfMarket?: string | null;
-  /** Время обновления выручки на стороне DeFiLlama. */
-  asOfFees?: string | null;
-  /** Время обновления TVL на стороне DeFiLlama. */
-  asOfTvl?: string | null;
-  /** Основание расчёта выручки за 12 месяцев. */
-  revenueBasis?: 'reported_1y' | 'run_rate_30d' | 'none';
-  /** Версия вселенной, в составе которой собрана строка. */
-  universeVersion?: string | null;
 }

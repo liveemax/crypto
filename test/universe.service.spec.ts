@@ -1,11 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
-import { DEFAULT_PROFILE } from '../../config/profiles';
-import { StoreService } from '../store/store.service';
-import { UniverseBuilder } from './universe.builder';
-import { UniverseFilter } from './universe.filter';
-import { UniverseService } from './universe.service';
-import { UniverseCandidate, UniverseSnapshot } from './universe.types';
-import { JobService } from '../jobs/job.service';
+import { DEFAULT_PROFILE } from '../src/config/profiles';
+import { StoreService } from '../src/core/store/store.service';
+import { UniverseBuilder } from '../src/core/universe/universe.builder';
+import { UniverseFilter } from '../src/core/universe/universe.filter';
+import { UniverseService } from '../src/core/universe/universe.service';
+import { UniverseCandidate, UniverseSnapshot } from '../src/core/universe/universe.types';
+import { JobService } from '../src/core/jobs/job.service';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {

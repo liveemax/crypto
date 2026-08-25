@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { SnapshotService } from '../core/fetch/snapshot.service';
 import { RefreshSnapshotDto, SnapshotQueryDto, SnapshotRowDto } from './dto/snapshot.dto';
 import { UniverseService } from '../core/universe/universe.service';
@@ -26,9 +26,25 @@ export class SnapshotController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Получить последний снапшот' })
+  @ApiOperation({
+    summary: 'Строки снапшота — то, что пойдёт на вход агентам',
+    description:
+      'Отличие от GET /universe: там кандидаты вселенной, сырьё со всеми рыночными ' +
+      'числами и склейкой. Здесь SnapshotRow — приведённые метрики со временем каждого ' +
+      'источника и universeVersion, вход шагов 08–14.\n\n' +
+      'Отдаётся страницами: limit по умолчанию 50, максимум 500.',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiOkResponse({ type: SnapshotRowDto, isArray: true })
-  latest() { return this.snapshots.latest(); }
+  async latest(@Query('limit') limit?: string, @Query('offset') offset?: string) {
+    const rows = (await this.snapshots.latest()) ?? [];
+    const size = Number(limit);
+    const from = Number(offset);
+    const take = Number.isFinite(size) && size > 0 ? Math.min(size, 500) : 50;
+    const skip = Number.isFinite(from) && from > 0 ? from : 0;
+    return Array.isArray(rows) ? rows.slice(skip, skip + take) : rows;
+  }
 
   @Get(':token')
   @ApiOperation({ summary: 'Получить данные одного токена' })

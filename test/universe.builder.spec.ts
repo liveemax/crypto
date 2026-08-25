@@ -1,7 +1,7 @@
-import { CoingeckoService } from '../fetch/coingecko.service';
-import { DefillamaService, FeeDataType } from '../fetch/defillama.service';
-import { UniverseBuilder } from './universe.builder';
-import { UniverseCandidate } from './universe.types';
+import { CoingeckoService } from '../src/core/fetch/coingecko.service';
+import { DefillamaService, FeeDataType } from '../src/core/fetch/defillama.service';
+import { UniverseBuilder } from '../src/core/universe/universe.builder';
+import { UniverseCandidate } from '../src/core/universe/universe.types';
 
 function candidate(): UniverseCandidate {
   return {

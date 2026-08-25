@@ -76,6 +76,16 @@ export class UniverseQueryDto {
   @IsInt()
   @Min(0)
   offset?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Разово посмотреть другим отбором. Рабочий отбор при этом не меняется — ' +
+      'его задаёт POST /universe/screen',
+    enum: ['default', 'yield-hunter', 'deep-value'],
+  })
+  @IsOptional()
+  @IsString()
+  profileId?: string;
 }
 
 export class UniverseCandidateDto {
@@ -109,7 +119,14 @@ export class UniverseCandidateDto {
   @ApiProperty({ type: [String], example: ['aave-v3', 'aave-v2'] })
   defillamaSlugs!: string[];
   @ApiProperty({ nullable: true, example: 'lending' }) sector!: string | null;
-  @ApiProperty({ enum: ['gecko_id', 'chain', 'override', 'none'] }) matchedBy!: string;
+  @ApiProperty({
+    enum: ['gecko_id', 'symbol', 'chain', 'override', 'none'],
+    description:
+      'Как нашли протокол: gecko_id — прямая ссылка от DeFiLlama; symbol — по тикеру ' +
+      'группы версий, когда gecko_id пуст у всех; chain — сеть по имени; ' +
+      'override — вручную в discovery.ts; none — не нашли, экономики нет',
+  })
+  matchedBy!: string;
   @ApiProperty({ nullable: true }) tvlUsd!: number | null;
   @ApiProperty({ nullable: true }) tvlSource!: string | null;
 
@@ -162,20 +179,40 @@ export class FunnelStageDto {
 }
 
 export class FunnelTiersDto {
-  @ApiProperty({ example: 60, description: 'Выручка доходит до держателей токена' })
+  @ApiProperty({ example: 83, description: 'Выручка доходит до держателей токена' })
   yield!: number;
-  @ApiProperty({ example: 90, description: 'Выручка есть, до держателей не доходит' })
+  @ApiProperty({ example: 85, description: 'Выручка есть, до держателей не доходит' })
   economics!: number;
-  @ApiProperty({ example: 550, description: 'Шлак-фильтр пройден, финансовых данных нет' })
+  @ApiProperty({ example: 439, description: 'Шлак-фильтр пройден, финансовых данных нет' })
   pool!: number;
-  @ApiProperty({ example: 600 }) rejected!: number;
+  @ApiProperty({ example: 693 }) rejected!: number;
 }
 
 export class FunnelReportDto {
   @ApiProperty({ example: 1_300 }) total!: number;
   @ApiProperty({ type: FunnelStageDto, isArray: true }) stages!: FunnelStageDto[];
-  @ApiProperty({ example: 700 }) passed!: number;
+  @ApiProperty({ example: 607 }) passed!: number;
   @ApiProperty({ type: FunnelTiersDto }) tiers!: FunnelTiersDto;
+}
+
+/**
+ * Воронка вместе с происхождением. Внутри ответов screen и compare эти три поля
+ * не нужны — там снимок и профиль названы на верхнем уровне. Нужны они там, где
+ * воронка приходит сама по себе: иначе «605» не отличить от «605 другого отбора
+ * по другому снимку».
+ */
+export class FunnelViewDto extends FunnelReportDto {
+  @ApiProperty({
+    example: '2026-08-25',
+    description: 'Версия вселенной, по которой считалась воронка',
+  })
+  universeVersion!: string;
+  @ApiProperty({ example: '2026-08-25T11:43:55.725Z' }) builtAt!: string;
+  @ApiProperty({
+    example: 'default',
+    description: 'Чей это отбор. Воронка — мнение отбора о снимке, а не свойство снимка',
+  })
+  profileId!: string;
 }
 
 export class UniverseProgressDto {
@@ -193,21 +230,32 @@ export class UniverseProgressDto {
   @ApiProperty({ example: 1_000, description: 'Строк загружено' }) loaded!: number;
   @ApiProperty({ example: 0, description: 'Запросов завершилось ошибкой' })
   failures!: number;
-  @ApiProperty({ nullable: true, example: 'HTTP 429: Too Many Requests' })
-  lastError!: string | null;
-  @ApiProperty({ nullable: true }) startedAt!: string | null;
+  @ApiProperty({ nullable: true, example: null }) lastError!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-08-25T11:40:12.000Z' })
+  startedAt!: string | null;
   @ApiProperty({ example: 48 }) elapsedSec!: number;
-  @ApiProperty({ nullable: true, example: 24 }) etaSec!: number | null;
+  @ApiProperty({ nullable: true, example: null }) etaSec!: number | null;
 }
 
 export class UniverseStatusDto {
-  @ApiProperty({ enum: ['idle', 'running', 'error'] }) state!: string;
+  @ApiProperty({ enum: ['idle', 'running', 'error'], example: 'idle' }) state!: string;
   @ApiProperty({ type: UniverseProgressDto }) progress!: UniverseProgressDto;
-  @ApiProperty({ nullable: true }) error!: string | null;
-  @ApiProperty({ nullable: true, example: '2026-08-24' }) version!: string | null;
-  @ApiProperty({ nullable: true, example: 3 }) ageDays!: number | null;
+  @ApiProperty({ nullable: true, example: null }) error!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-08-25' }) version!: string | null;
+  @ApiProperty({ nullable: true, example: 0 }) ageDays!: number | null;
   @ApiProperty({ nullable: true, example: 1_300 }) total!: number | null;
-  @ApiProperty({ nullable: true, example: 700 }) passed!: number | null;
+  @ApiProperty({
+    nullable: true,
+    example: 'default',
+    description: 'Рабочий отбор, которым посчитаны passed и tiers',
+  })
+  profileId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    example: 607,
+    description: 'Прошло рабочий отбор, а не «есть во вселенной»',
+  })
+  passed!: number | null;
   @ApiProperty({ type: FunnelTiersDto, nullable: true }) tiers!: FunnelTiersDto | null;
 }
 

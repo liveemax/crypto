@@ -36,6 +36,7 @@
     "typescript": "^5.9.2"
   },
   "jest": {
+    "rootDir": ".",
     "moduleFileExtensions": ["js", "json", "ts"],
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",

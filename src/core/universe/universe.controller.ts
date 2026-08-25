@@ -9,6 +9,7 @@ import {
   UniverseQueryDto,
   UniverseScreenResponseDto,
   UniverseStatusDto,
+  FunnelViewDto,
 } from './universe.dto';
 import { CompareUniverseDto, ProfileSelectionDto } from './profile.dto';
 import { UniverseService } from './universe.service';
@@ -66,6 +67,9 @@ export class UniverseController {
       'Прогоняет уже собранную вселенную через фильтры выбранного профиля и отдаёт ' +
       'воронку отсева и тиры. В сеть не ходит, снимок не меняет, работает мгновенно — ' +
       'меняйте профиль сколько угодно раз, это бесплатно.\n\n' +
+      'ВЫБРАННЫЙ ОТБОР СТАНОВИТСЯ РАБОЧИМ. После этого GET /universe/status, ' +
+      'GET /universe/funnel и GET /universe показывают его, а не базовый. ' +
+      'Разово посмотреть другой, не меняя рабочий, — параметр profileId в этих трёх.\n\n' +
       'Передавайте ЛИБО profileId готового профиля, ЛИБО полный profile для разового ' +
       'эксперимента. Оба сразу — ошибка. Пустое тело равно profileId=default.\n\n' +
       'Готовые профили и их гипотезы — в GET /config/profiles.\n\n' +
@@ -113,6 +117,9 @@ export class UniverseController {
     @Query('limit') limit?: string,
   ): Promise<UniverseScreenResponseDto> {
     const result = await this.universe.screen(body as unknown as ProfileSelection);
+    // Выбранный отбор становится рабочим: GET /universe/status, /universe/funnel
+    // и /universe начинают показывать его, а не базовый.
+    this.universe.setActive(result.profile);
     if (includeCandidates !== 'true') return { ...result, candidates: [] };
     const size = Number(limit);
     const take = Number.isFinite(size) && size > 0 ? Math.min(size, 500) : 50;
@@ -140,38 +147,50 @@ export class UniverseController {
     );
   }
 
-  @Get('status')  @ApiOperation({
-    summary: 'Что сейчас происходит и что лежит в снимке',
+  @Get('status')
+  @ApiOperation({
+    summary: 'Что сейчас происходит и сколько прошло рабочий отбор',
     description:
       'state: idle — работы нет, running — идёт сборка или обновление чисел, ' +
       'error — упало, причина в поле error. Проценты и остаток времени — в progress.\n\n' +
-      'Поля passed и tiers показывают отбор базового профиля. Для другого профиля ' +
-      'вызывайте POST /universe/screen.',
+      'passed и tiers считаются рабочим отбором, его имя — в profileId. ' +
+      'Рабочий отбор задаётся последним POST /universe/screen.',
   })
   @ApiOkResponse({ type: UniverseStatusDto })
   async status(): Promise<UniverseStatusDto> {
-    return this.universe.status();
+    const base = await this.universe.status();
+    const active = await this.universe.activeSummary();
+    return active ? { ...base, ...active } : { ...base, profileId: null };
   }
 
   @Get('funnel')
   @ApiOperation({
-    summary: 'Воронка отсева базового профиля',
+    summary: 'Воронка рабочего отбора: где именно отсеялись монеты',
     description:
       'На каждой проверке: сколько вошло, сколько отсеяно, сколько осталось. ' +
       'Проверки идут по очереди, поэтому отсеянный на третьей до четвёртой не доходит — ' +
       'число напротив проверки зависит от того, кто стоял раньше.\n\n' +
-      'Это воронка базового профиля, вшитая при сборке. Воронку любого другого — ' +
-      'в POST /universe/screen.',
+      'Считается рабочим отбором, который задал последний POST /universe/screen. ' +
+      'Разово посмотреть другой — параметр profileId; рабочий при этом не меняется.\n\n' +
+      'universeVersion, builtAt и profileId в ответе отвечают на вопрос «откуда эти ' +
+      'числа»: воронка это мнение конкретного отбора о конкретном снимке.',
   })
-  @ApiOkResponse({ type: FunnelReportDto })
-  async funnel(): Promise<FunnelReportDto> {
+  @ApiQuery({ name: 'profileId', required: false, type: String })
+  @ApiOkResponse({ type: FunnelViewDto })
+  async funnel(@Query('profileId') profileId?: string): Promise<FunnelViewDto> {
     const snapshot = await this.universe.latest();
     if (!snapshot) {
       throw new NotFoundException(
         'Вселенная ещё не собрана. Вызовите POST /universe/refresh',
       );
     }
-    return snapshot.funnel;
+    const view = await this.universe.view(profileId);
+    return {
+      universeVersion: view.universeVersion,
+      builtAt: view.builtAt,
+      profileId: view.profile.id,
+      ...view.funnel,
+    };
   }
 
   @Get()
@@ -179,9 +198,11 @@ export class UniverseController {
     summary: 'Список монет с числами, тирами и причинами отсева',
     description:
       'Каждая строка — посчитанные кодом числа со ссылкой на источник и временем ' +
-      'обновления источника. По умолчанию только прошедшие базовый отбор; ' +
+      'обновления источника. По умолчанию только прошедшие рабочий отбор; ' +
       'passedOnly=false покажет и отсеянных с полем rejectReason — почему именно.\n\n' +
-      'Тиры и причины здесь — от базового профиля.',
+      'Тиры и причины считаются рабочим отбором. Разово другой — параметр profileId.\n\n' +
+      'Отдаётся страницами: limit по умолчанию 100, максимум 2000. Полный список — ' +
+      'это мегабайты JSON, на которых виснет страница Swagger.',
   })
   @ApiOkResponse({ type: UniverseCandidateDto, isArray: true })
   async list(@Query() query: UniverseQueryDto): Promise<UniverseCandidateDto[]> {
@@ -194,8 +215,9 @@ export class UniverseController {
     const passedOnly = query.passedOnly ?? true;
     const sector = query.sector?.trim().toLowerCase();
     const sort = (query.sort ?? 'rank') as SortKey;
+    const view = await this.universe.view(query.profileId);
 
-    return snapshot.candidates
+    return view.candidates
       .filter((item) => (passedOnly ? item.passed : true))
       .filter((item) => (query.tier ? item.tier === query.tier : true))
       .filter((item) => (sector ? item.sector === sector : true))

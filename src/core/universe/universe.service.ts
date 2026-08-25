@@ -9,6 +9,7 @@ import type { AnalysisProfile } from './profile.types';
 import {
   BuildProgressEvent,
   CandidateRef,
+  FunnelReport,
   ProfileReference,
   ProfileSelection,
   TierChange,
@@ -51,6 +52,12 @@ export class UniverseService {
   private inFlight: Promise<void> | null = null;
   private startedAtMs = 0;
   private failures = 0;
+      /**
+   * Отбор, выбранный последним POST /universe/screen. Снимок фактов он не
+   * трогает — меняется только то, какой ответ на них считается рабочим.
+   * Живёт в памяти процесса: после перезапуска сбрасывается на базовый.
+   */
+  private activeProfile: AnalysisProfile = DEFAULT_PROFILE;
 
   constructor(
     private readonly store: StoreService,
@@ -486,6 +493,35 @@ export class UniverseService {
       const details = error instanceof Error ? `: ${error.message}` : '';
       throw new BadRequestException(`Разовый профиль не соответствует контракту${details}`);
     }
+  }
+
+    /** Запоминает выбранный отбор: он становится рабочим для status, funnel и списка. */
+  setActive(profile: AnalysisProfile): void {
+    this.activeProfile = profile;
+  }
+
+  /** Профиль по имени, а без имени — активный. */
+  profileOr(profileId?: string): AnalysisProfile {
+    const id = profileId?.trim();
+    return id ? this.requireBuiltin(id) : this.activeProfile;
+  }
+
+  /** Воронка и кандидаты указанного отбора: ноль запросов, снимок не меняется. */
+  async view(profileId?: string): Promise<UniverseScreenResult> {
+    const snapshot = await this.requireLatest();
+    return this.screenSnapshot(snapshot, this.profileOr(profileId));
+  }
+
+  /** passed и tiers активного отбора — то, что показывает status. */
+  async activeSummary(): Promise<{
+    profileId: string;
+    passed: number;
+    tiers: FunnelReport['tiers'];
+  } | null> {
+    const snapshot = await this.latest();
+    if (!snapshot) return null;
+    const { profile, funnel } = this.screenSnapshot(snapshot, this.activeProfile);
+    return { profileId: profile.id, passed: funnel.passed, tiers: funnel.tiers };
   }
 }
 

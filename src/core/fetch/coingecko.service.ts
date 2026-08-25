@@ -154,7 +154,7 @@ export class CoingeckoService {
     const rows: CoinMarket[] = [];
     const errors: string[] = [];
 
-    for (const part of chunk(ids, DISCOVERY.pageSize)) {
+    for (const [index, part] of chunk(ids, DISCOVERY.pageSize).entries()) {
       const query =
         `vs_currency=usd&ids=${part.map(encodeURIComponent).join(',')}` +
         `&per_page=${DISCOVERY.pageSize}&page=1&sparkline=false&locale=en`;
@@ -167,6 +167,7 @@ export class CoingeckoService {
         );
         continue;
       }
+      await this.store.saveRaw('coingecko-markets', `ids-${index + 1}`, response.data);
       for (const item of response.data) {
         const row = toMarket(item, sourceUrl);
         if (row) rows.push(row);

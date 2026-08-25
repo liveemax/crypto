@@ -1,13 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DISCOVERY } from '../../config/discovery';
+import { DEFAULT_PROFILE, getProfile } from '../../config/profiles';
 import { StoreService } from '../store/store.service';
 import { UniverseBuilder } from './universe.builder';
 import { UniverseFilter } from './universe.filter';
+import { parseAnalysisProfile } from './profile.schema';
+import type { AnalysisProfile } from './profile.types';
 import {
   BuildProgressEvent,
+  CandidateRef,
+  ProfileReference,
+  ProfileSelection,
+  TierChange,
   UniverseCandidate,
+  UniverseCompareResult,
   UniverseProgress,
   UniverseRefreshResult,
+  UniverseScreenResult,
   UniverseSnapshot,
   UniverseStatus,
 } from './universe.types';
@@ -65,6 +74,87 @@ export class UniverseService {
   async passed(): Promise<UniverseCandidate[]> {
     const snapshot = await this.latest();
     return snapshot?.candidates.filter((item) => item.passed) ?? [];
+  }
+
+  /** Применяет профиль к последнему снимку без сети и без изменения снимка. */
+  async screen(selection: ProfileSelection = {}): Promise<UniverseScreenResult> {
+    const snapshot = await this.requireLatest();
+    return this.screenSnapshot(snapshot, this.resolveProfile(selection));
+  }
+
+  /** Сравнивает два профиля на одном неизменном снимке без сетевых запросов. */
+  async compare(
+    leftRef: ProfileReference,
+    rightRef: ProfileReference,
+  ): Promise<UniverseCompareResult> {
+    const snapshot = await this.requireLatest();
+    const left = this.screenSnapshot(snapshot, this.resolveProfile(leftRef));
+    const right = this.screenSnapshot(snapshot, this.resolveProfile(rightRef));
+    const rightById = new Map(
+      right.candidates.map((candidate) => [candidate.coingeckoId, candidate]),
+    );
+    const leftPassed = new Set(
+      left.candidates
+        .filter((candidate) => candidate.passed)
+        .map((candidate) => candidate.coingeckoId),
+    );
+    const rightPassed = new Set(
+      right.candidates
+        .filter((candidate) => candidate.passed)
+        .map((candidate) => candidate.coingeckoId),
+    );
+
+    const both: CandidateRef[] = [];
+    const onlyLeft: CandidateRef[] = [];
+    const onlyRight: CandidateRef[] = [];
+    const tierChanges: TierChange[] = [];
+    for (const candidate of left.candidates) {
+      const ref = candidateRef(candidate);
+      if (candidate.passed && rightPassed.has(candidate.coingeckoId)) both.push(ref);
+      else if (candidate.passed) onlyLeft.push(ref);
+
+      const other = rightById.get(candidate.coingeckoId);
+      if (other && other.tier !== candidate.tier) {
+        tierChanges.push({ ...ref, left: candidate.tier, right: other.tier });
+      }
+    }
+    for (const candidate of right.candidates) {
+      if (candidate.passed && !leftPassed.has(candidate.coingeckoId)) {
+        onlyRight.push(candidateRef(candidate));
+      }
+    }
+
+    return {
+      universeVersion: snapshot.version,
+      builtAt: snapshot.builtAt,
+      left: { profile: left.profile, funnel: left.funnel },
+      right: { profile: right.profile, funnel: right.funnel },
+      both,
+      onlyLeft,
+      onlyRight,
+      tierChanges,
+    };
+  }
+
+  /** Обновляет числа готового состава, сохраняя дату и участников вселенной. */
+  async refreshPrices(): Promise<UniverseScreenResult> {
+    const snapshot = await this.requireLatest();
+    const output = await this.builder.refreshNumbers(snapshot.candidates);
+    const funnel = this.filter.apply(
+      output.candidates,
+      new Set(snapshot.excludedIds),
+      DEFAULT_PROFILE,
+    );
+    const refreshed: UniverseSnapshot = {
+      ...snapshot,
+      sources: { ...snapshot.sources, ...output.sources },
+      candidates: output.candidates,
+      profileId: DEFAULT_PROFILE.id,
+      funnel,
+      warnings: [...new Set([...snapshot.warnings, ...output.warnings])],
+    };
+    await this.store.saveSnapshot(SNAPSHOT_NAME, refreshed);
+    return this.screenSnapshot(refreshed, DEFAULT_PROFILE);
   }
 
   /** Пересобирает состав вселенной, если он старше месяца; работа идёт в фоне. */
@@ -153,7 +243,7 @@ export class UniverseService {
       failed: false,
       error: null,
     });
-    const funnel = this.filter.apply(output.candidates, output.excluded);
+    const funnel = this.filter.apply(output.candidates, output.excluded, DEFAULT_PROFILE);
 
     const snapshot: UniverseSnapshot = {
       version: new Date().toISOString().slice(0, 10),
@@ -162,7 +252,7 @@ export class UniverseService {
       sources: output.sources,
       candidates: output.candidates,
       excludedIds: [...output.excluded].sort(),
-      profileId: 'default',
+      profileId: DEFAULT_PROFILE.id,
       funnel,
       warnings: output.warnings,
     };
@@ -232,6 +322,68 @@ export class UniverseService {
         : null;
     return { ...progress, elapsedSec, etaSec };
   }
+
+  private async requireLatest(): Promise<UniverseSnapshot> {
+    const snapshot = await this.latest();
+    if (!snapshot) {
+      throw new NotFoundException(
+        'Вселенная ещё не собрана. Вызовите POST /universe/refresh',
+      );
+    }
+    return snapshot;
+  }
+
+  private screenSnapshot(
+    snapshot: UniverseSnapshot,
+    profile: AnalysisProfile,
+  ): UniverseScreenResult {
+    const candidates = snapshot.candidates.map((candidate) => ({
+      ...candidate,
+      defillamaSlugs: [...candidate.defillamaSlugs],
+    }));
+    const funnel = this.filter.apply(candidates, new Set(snapshot.excludedIds), profile);
+    return {
+      universeVersion: snapshot.version,
+      builtAt: snapshot.builtAt,
+      profile,
+      funnel,
+      candidates,
+    };
+  }
+
+  private resolveProfile(reference: ProfileReference): AnalysisProfile {
+    if (typeof reference === 'string') return this.requireBuiltin(reference);
+    if ('screen' in reference) return this.parseCustomProfile(reference);
+
+    if (reference.profileId && reference.profile) {
+      throw new BadRequestException('Передайте profileId или profile, но не оба сразу');
+    }
+    if (reference.profile) return this.parseCustomProfile(reference.profile);
+    return this.requireBuiltin(reference.profileId ?? DEFAULT_PROFILE.id);
+  }
+
+  private requireBuiltin(id: string): AnalysisProfile {
+    const profile = getProfile(id.trim());
+    if (!profile) {
+      throw new BadRequestException(
+        `Неизвестный profileId: ${id}. Доступные профили: default, yield-hunter, deep-value`,
+      );
+    }
+    return profile;
+  }
+
+  private parseCustomProfile(value: unknown): AnalysisProfile {
+    try {
+      return parseAnalysisProfile(value);
+    } catch (error: unknown) {
+      const details = error instanceof Error ? `: ${error.message}` : '';
+      throw new BadRequestException(`Разовый профиль не соответствует контракту${details}`);
+    }
+  }
+}
+
+function candidateRef(candidate: UniverseCandidate): CandidateRef {
+  return { coingeckoId: candidate.coingeckoId, ticker: candidate.ticker };
 }
 
 /** Описывает изменение состава относительно прошлой вселенной. */

@@ -38,8 +38,21 @@ describe('ConfigController (e2e)', () => {
     const response = await request(app.getHttpServer()).get('/config/thresholds').expect(200);
     expect(response.body).toEqual({
       thresholds: { minMcapUsd: 50_000_000, minAnnualRevenueUsd: 1_000_000, maxPRev: 60 },
-      weights: { valueCapture: 0.25, revenueQuality: 0.2, unlocks: 0.25, sectorPosition: 0.15, organic: 0.15 },
+      weights: { unlocks: 0.35, mechanism: 0.25, screener: 0.2, sectorPosition: 0.2 },
       maxStaleDays: 45,
     });
+  });
+
+  it('GET /config/profiles возвращает три воспроизводимых профиля с rationale', async () => {
+    const response = await request(app.getHttpServer()).get('/config/profiles').expect(200);
+
+    expect(response.body.map((profile: { id: string }) => profile.id)).toEqual([
+      'default',
+      'yield-hunter',
+      'deep-value',
+    ]);
+    expect(
+      response.body.every((profile: { rationale: string }) => profile.rationale.length > 0),
+    ).toBe(true);
   });
 });

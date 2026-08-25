@@ -1,5 +1,6 @@
 import { UniverseFilter } from "./universe.filter";
 import { UniverseCandidate } from "./universe.types";
+import { DEFAULT_PROFILE, YIELD_HUNTER_PROFILE } from '../../config/profiles';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
@@ -199,5 +200,19 @@ describe('UniverseFilter', () => {
     expect(report.passed).toBe(1);
     expect(report.stages.find((stage) => stage.stage === 'liquid')?.dropped).toBe(1);
     expect(report.stages.at(-1)?.kept).toBe(1);
+  });
+
+  it('два профиля дают разный отсев на одних исходных кандидатах', () => {
+    const original = candidate({ holderYieldPct: 0.5, payoutRatioPct: 10 });
+    const defaultRows = [{ ...original, defillamaSlugs: [...original.defillamaSlugs] }];
+    const yieldRows = [{ ...original, defillamaSlugs: [...original.defillamaSlugs] }];
+
+    filter.apply(defaultRows, new Set(), DEFAULT_PROFILE);
+    filter.apply(yieldRows, new Set(), YIELD_HUNTER_PROFILE);
+
+    expect(defaultRows[0].passed).toBe(true);
+    expect(yieldRows[0].passed).toBe(false);
+    expect(yieldRows[0].rejectedAt).toBe('holder_yield');
+    expect(original.passed).toBe(false);
   });
 });

@@ -37,20 +37,17 @@ export class ScreenerThresholdsDto {
 }
 
 export class CompositeWeightsDto {
-  @ApiProperty({ example: 0.25 })
-  valueCapture!: number;
-
-  @ApiProperty({ example: 0.2 })
-  revenueQuality!: number;
-
-  @ApiProperty({ example: 0.25 })
+  @ApiProperty({ example: 0.35 })
   unlocks!: number;
 
-  @ApiProperty({ example: 0.15 })
-  sectorPosition!: number;
+  @ApiProperty({ example: 0.25 })
+  mechanism!: number;
 
-  @ApiProperty({ example: 0.15 })
-  organic!: number;
+  @ApiProperty({ example: 0.2 })
+  screener!: number;
+
+  @ApiProperty({ example: 0.2 })
+  sectorPosition!: number;
 }
 
 export class ConfigThresholdsDto {

@@ -1,4 +1,5 @@
 import { UniverseCandidate } from './universe/universe.types';
+import type { AnalysisProfile } from './universe/profile.types';
 
 export interface Metric {
   value: number | string | null;
@@ -65,6 +66,8 @@ export interface AgentContext {
   candidate?: UniverseCandidate;
   /** Версия вселенной: перцентили сектора сравнимы только внутри неё. */
   universeVersion?: string | null;
+  /** Профиль анализа: пороги хард-фильтров берутся отсюда, а не из констант. */
+  profile?: AnalysisProfile;
   docsText?: string;
   docsSources?: string[];
   priorResults?: Record<string, AgentResult>;

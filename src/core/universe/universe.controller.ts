@@ -1,15 +1,18 @@
 import { Body, Controller, Get, NotFoundException, Post, Query } from '@nestjs/common';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  UniverseCompareResponseDto,
   FunnelReportDto,
   RefreshUniverseDto,
   RefreshUniverseResponseDto,
   UniverseCandidateDto,
   UniverseQueryDto,
+  UniverseScreenResponseDto,
   UniverseStatusDto,
 } from './universe.dto';
+import { CompareUniverseDto, ProfileSelectionDto } from './profile.dto';
 import { UniverseService } from './universe.service';
-import { UniverseCandidate } from './universe.types';
+import { ProfileReference, ProfileSelection, UniverseCandidate } from './universe.types';
 
 type SortKey = 'rank' | 'holderYieldPct' | 'revenue12mUsd' | 'pRev';
 
@@ -36,6 +39,45 @@ export class UniverseController {
       force: query.force ?? body.force,
       topN: query.topN ?? body.topN,
     });
+  }
+
+  @Post('prices')
+  @ApiOperation({
+    summary: 'Обновить числа без изменения состава вселенной',
+    description:
+      'Загружает рынок CoinGecko и три сводки комиссий DeFiLlama. ' +
+      'Версия и builtAt состава не меняются.',
+  })
+  @ApiOkResponse({ type: UniverseScreenResponseDto })
+  async prices(): Promise<UniverseScreenResponseDto> {
+    return this.universe.refreshPrices();
+  }
+
+  @Post('screen')
+  @ApiOperation({
+    summary: 'Применить профиль к сохранённой вселенной без сети',
+    description:
+      'Принимает profileId встроенного профиля или полный разовый profile. ' +
+      'Сохранённый снимок не изменяется.',
+  })
+  @ApiBody({ type: ProfileSelectionDto, required: false })
+  @ApiOkResponse({ type: UniverseScreenResponseDto })
+  async screen(
+    @Body() body: ProfileSelectionDto = {},
+  ): Promise<UniverseScreenResponseDto> {
+    return this.universe.screen(body as unknown as ProfileSelection);
+  }
+
+  @Post('compare')
+  @ApiOperation({ summary: 'Сравнить два профиля на одном снимке без сети' })
+  @ApiOkResponse({ type: UniverseCompareResponseDto })
+  async compare(
+    @Body() body: CompareUniverseDto,
+  ): Promise<UniverseCompareResponseDto> {
+    return this.universe.compare(
+      body.left as unknown as ProfileReference,
+      body.right as unknown as ProfileReference,
+    );
   }
 
   @Get('status')

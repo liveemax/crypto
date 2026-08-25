@@ -130,10 +130,15 @@ export class DefillamaService {
     return this.store.cachePut('defillama', 'stablecoins', ids);
   }
 
-  /** Возвращает сводку выбранного типа комиссий по всем протоколам и сетям. */
-  async getFeesOverview(dataType: FeeDataType): Promise<LlamaFeeRow[] | null> {
-    const cached = await this.store.cacheGet<LlamaFeeRow[]>('defillama', dataType);
-    if (cached) return cached;
+  /** Возвращает сводку комиссий; fresh обходит кэш при явном обновлении чисел. */
+  async getFeesOverview(
+    dataType: FeeDataType,
+    options: { fresh?: boolean } = {},
+  ): Promise<LlamaFeeRow[] | null> {
+    if (!options.fresh) {
+      const cached = await this.store.cacheGet<LlamaFeeRow[]>('defillama', dataType);
+      if (cached) return cached;
+    }
 
     const response = await fetchJson<unknown>(feesOverviewUrl(dataType), {
       timeoutMs: 60_000,

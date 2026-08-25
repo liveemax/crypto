@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { AnalysisProfileDto } from './profile.dto';
 
 /** Сохраняет undefined: иначе отсутствующий флаг превращается в явный false. */
 const toBoolean = ({ value }: { value: unknown }): boolean | undefined => {
@@ -218,4 +219,39 @@ export class RefreshUniverseResponseDto {
   reason!: string;
   @ApiProperty({ nullable: true, example: 0 }) ageDays!: number | null;
   @ApiProperty({ example: 'Пересборка запущена в фоне' }) message!: string;
+}
+
+export class UniverseScreenResponseDto {
+  @ApiProperty({ example: '2026-08-24' }) universeVersion!: string;
+  @ApiProperty({ example: '2026-08-24T17:48:30.000Z' }) builtAt!: string;
+  @ApiProperty({ type: AnalysisProfileDto }) profile!: AnalysisProfileDto;
+  @ApiProperty({ type: FunnelReportDto }) funnel!: FunnelReportDto;
+  @ApiProperty({ type: UniverseCandidateDto, isArray: true })
+  candidates!: UniverseCandidateDto[];
+}
+
+export class CandidateRefDto {
+  @ApiProperty({ example: 'aave' }) coingeckoId!: string;
+  @ApiProperty({ example: 'AAVE' }) ticker!: string;
+}
+
+export class TierChangeDto extends CandidateRefDto {
+  @ApiProperty({ enum: ['yield', 'economics', 'pool', 'rejected'] }) left!: string;
+  @ApiProperty({ enum: ['yield', 'economics', 'pool', 'rejected'] }) right!: string;
+}
+
+export class CompareSideDto {
+  @ApiProperty({ type: AnalysisProfileDto }) profile!: AnalysisProfileDto;
+  @ApiProperty({ type: FunnelReportDto }) funnel!: FunnelReportDto;
+}
+
+export class UniverseCompareResponseDto {
+  @ApiProperty({ example: '2026-08-24' }) universeVersion!: string;
+  @ApiProperty({ example: '2026-08-24T17:48:30.000Z' }) builtAt!: string;
+  @ApiProperty({ type: CompareSideDto }) left!: CompareSideDto;
+  @ApiProperty({ type: CompareSideDto }) right!: CompareSideDto;
+  @ApiProperty({ type: CandidateRefDto, isArray: true }) both!: CandidateRefDto[];
+  @ApiProperty({ type: CandidateRefDto, isArray: true }) onlyLeft!: CandidateRefDto[];
+  @ApiProperty({ type: CandidateRefDto, isArray: true }) onlyRight!: CandidateRefDto[];
+  @ApiProperty({ type: TierChangeDto, isArray: true }) tierChanges!: TierChangeDto[];
 }

@@ -37,6 +37,12 @@ export interface BuildOutput {
   warnings: string[];
 }
 
+export interface RefreshNumbersOutput {
+  candidates: UniverseCandidate[];
+  sources: Record<string, string>;
+  warnings: string[];
+}
+
 const FEE_TYPES: FeeDataType[] = ['dailyFees', 'dailyRevenue', 'dailyHoldersRevenue'];
 
 @Injectable()
@@ -174,6 +180,53 @@ export class UniverseBuilder {
     return { candidates, sources, excluded, warnings };
   }
 
+  /** Обновляет рыночные и финансовые числа, не меняя состав и метаданные вселенной. */
+  async refreshNumbers(
+    candidates: readonly UniverseCandidate[],
+  ): Promise<RefreshNumbersOutput> {
+    const warnings: string[] = [];
+    const ids = candidates.map((candidate) => candidate.coingeckoId);
+    const markets = await this.coingecko.getMarketsByIds(ids);
+    if (markets.errors.length > 0) {
+      throw new Error(`CoinGecko не обновил все пачки: ${markets.errors.join('; ')}`);
+    }
+    const marketById = new Map(markets.rows.map((market) => [market.coingeckoId, market]));
+
+    const geckoBySlug = new Map<string, string>();
+    for (const candidate of candidates) {
+      for (const slug of candidate.defillamaSlugs) {
+        geckoBySlug.set(slug, candidate.coingeckoId);
+      }
+    }
+
+    const totals = new Map<FeeDataType, Map<string, FeeTotals>>();
+    for (const dataType of FEE_TYPES) {
+      const rows = await this.defillama.getFeesOverview(dataType, { fresh: true });
+      if (!rows) {
+        throw new Error(
+          `DeFiLlama не обновил ${dataType}. Проверьте ${feesOverviewUrl(dataType)} вручную`,
+        );
+      }
+      totals.set(
+        dataType,
+        aggregateFees(rows, new Map<string, string>(), geckoBySlug),
+      );
+    }
+
+    const refreshed = candidates.map((candidate) => {
+      const market = marketById.get(candidate.coingeckoId) ?? null;
+      if (!market) {
+        warnings.push(`CoinGecko не вернул рыночные данные для ${candidate.coingeckoId}`);
+      }
+      return refreshCandidate(candidate, market, totals, warnings);
+    });
+
+    const sources: Record<string, string> = {};
+    if (markets.rows[0]) sources.markets = markets.rows[0].sourceUrl;
+    for (const dataType of FEE_TYPES) sources[dataType] = feesOverviewUrl(dataType);
+    return { candidates: refreshed, sources, warnings };
+  }
+
   /**
    * Собирает список исключений из данных, а не из списка в коде.
    * Каждый источник отчитывается в warnings: молча не применённый отсев —
@@ -234,6 +287,84 @@ export class UniverseBuilder {
     warnings.push(`Всего в списке исключений: ${excluded.size}`);
     return excluded;
   }
+}
+
+function refreshCandidate(
+  candidate: UniverseCandidate,
+  market: CoinMarket | null,
+  totals: Map<FeeDataType, Map<string, FeeTotals>>,
+  warnings: string[],
+): UniverseCandidate {
+  const priceUsd = market?.priceUsd ?? null;
+  const circulating = market?.circulating ?? null;
+  const totalSupply = market?.totalSupply ?? null;
+  const fdvUsd = market?.fdvUsd ?? null;
+  const vol24hUsd = market?.vol24hUsd ?? null;
+  const mcapCalcUsd =
+    priceUsd !== null && circulating !== null
+      ? round(mul(priceUsd, circulating), 2)
+      : null;
+  const divergence =
+    mcapCalcUsd !== null && market?.mcapUsd !== null && market?.mcapUsd !== undefined &&
+    market.mcapUsd > 0
+      ? round(Math.abs(mul(sub(div(mcapCalcUsd, market.mcapUsd), 1), 100)), 2)
+      : null;
+  if (divergence !== null && divergence > DISCOVERY.maxMcapDivergencePct) {
+    warnings.push(
+      `${candidate.ticker}: своя капитализация расходится с заявленной на ${divergence}%`,
+    );
+  }
+
+  const feeTotals = totals.get('dailyFees')?.get(candidate.coingeckoId) ?? null;
+  const revenueTotals = totals.get('dailyRevenue')?.get(candidate.coingeckoId) ?? null;
+  const holderTotals =
+    totals.get('dailyHoldersRevenue')?.get(candidate.coingeckoId) ?? null;
+  const fees12mUsd = annual(feeTotals);
+  const revenue12mUsd = annual(revenueTotals);
+  const holdersRevenue12mUsd = annual(holderTotals);
+  const revenueBasis =
+    revenueTotals === null
+      ? 'none'
+      : revenueTotals.total1y !== null
+        ? 'reported_1y'
+        : revenueTotals.total30d !== null
+          ? 'run_rate_30d'
+          : 'none';
+
+  return {
+    ...candidate,
+    priceUsd,
+    circulating,
+    totalSupply,
+    mcapCalcUsd,
+    mcapReportedUsd: market?.mcapUsd ?? null,
+    mcapDivergencePct: divergence,
+    fdvUsd,
+    vol24hUsd,
+    turnoverPct: pct(vol24hUsd, mcapCalcUsd),
+    floatPct: pct(circulating, totalSupply),
+    fdvToMcap: ratio(fdvUsd, mcapCalcUsd),
+    marketSource: market?.sourceUrl ?? null,
+    marketAsOf: market?.asOf ?? null,
+    fees12mUsd,
+    revenue12mUsd,
+    holdersRevenue12mUsd,
+    revenue30dUsd: revenueTotals?.total30d ?? null,
+    holdersRevenue30dUsd: holderTotals?.total30d ?? null,
+    revenueBasis,
+    sourceHealthy: revenueTotals?.healthy ?? true,
+    holderYieldPct: pct(holdersRevenue12mUsd, mcapCalcUsd),
+    takeRatePct: pct(revenue12mUsd, fees12mUsd),
+    payoutRatioPct: pct(holdersRevenue12mUsd, revenue12mUsd),
+    pRev: ratio(mcapCalcUsd, revenue12mUsd),
+    pFees: ratio(mcapCalcUsd, fees12mUsd),
+    fdvRev: ratio(fdvUsd, revenue12mUsd),
+    revenuePerTvlPct: pct(revenue12mUsd, candidate.tvlUsd),
+    tier: 'pool',
+    passed: false,
+    rejectedAt: null,
+    rejectReason: null,
+  };
 }
 
 function step(

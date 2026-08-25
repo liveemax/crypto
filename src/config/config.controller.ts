@@ -1,5 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { AnalysisProfileDto } from '../core/universe/profile.dto';
+import { BUILTIN_PROFILES } from './profiles';
 import { ConfigThresholdsDto, SectorDto, UniverseItemDto } from './config.dto';
 import { MAX_STALE_DAYS, THRESHOLDS, WEIGHTS } from './thresholds';
 import { sectors, UNIVERSE } from './universe';
@@ -7,6 +9,14 @@ import { sectors, UNIVERSE } from './universe';
 @ApiTags('config')
 @Controller('config')
 export class ConfigController {
+  /** Возвращает встроенные профили с объяснением проверяемой гипотезы. */
+  @Get('profiles')
+  @ApiOperation({ summary: 'Получить встроенные профили анализа' })
+  @ApiOkResponse({ type: AnalysisProfileDto, isArray: true })
+  getProfiles(): AnalysisProfileDto[] {
+    return [...BUILTIN_PROFILES];
+  }
+
   /** Возвращает полный список анализируемых активов. */
   @Get('universe')
   @ApiOperation({ summary: 'Получить вселенную анализируемых активов' })

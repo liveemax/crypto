@@ -1,3 +1,5 @@
+import type { AnalysisProfile } from './profile.types';
+
 export type RevenueBasis = 'reported_1y' | 'run_rate_30d' | 'none';
 export type MatchSource = 'gecko_id' | 'chain' | 'override' | 'none';
 
@@ -163,4 +165,40 @@ export interface UniverseRefreshResult {
   reason: 'fresh' | 'stale' | 'never_built' | 'already_running' | 'forced';
   ageDays: number | null;
   message: string;
+}
+
+export interface ProfileSelection {
+  profileId?: string;
+  profile?: AnalysisProfile;
+}
+
+export type ProfileReference = string | AnalysisProfile | ProfileSelection;
+
+export interface UniverseScreenResult {
+  universeVersion: string;
+  builtAt: string;
+  profile: AnalysisProfile;
+  funnel: FunnelReport;
+  candidates: UniverseCandidate[];
+}
+
+export interface CandidateRef {
+  coingeckoId: string;
+  ticker: string;
+}
+
+export interface TierChange extends CandidateRef {
+  left: Tier;
+  right: Tier;
+}
+
+export interface UniverseCompareResult {
+  universeVersion: string;
+  builtAt: string;
+  left: { profile: AnalysisProfile; funnel: FunnelReport };
+  right: { profile: AnalysisProfile; funnel: FunnelReport };
+  both: CandidateRef[];
+  onlyLeft: CandidateRef[];
+  onlyRight: CandidateRef[];
+  tierChanges: TierChange[];
 }

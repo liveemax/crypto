@@ -11,6 +11,7 @@ import {
   UniverseStatusDto,
   FunnelViewDto,
 } from './universe.dto';
+import { UniverseAlphaResponseDto } from './alpha.dto';
 import { CompareUniverseDto, ProfileSelectionDto } from './profile.dto';
 import { UniverseService } from './universe.service';
 import { ProfileReference, ProfileSelection, UniverseCandidate } from './universe.types';
@@ -191,6 +192,48 @@ export class UniverseController {
       profileId: view.profile.id,
       ...view.funnel,
     };
+  }
+
+  @Get('alpha')
+  @ApiOperation({
+    summary: 'ШАГ 4. Лидеры секторов — мгновенно, без интернета',
+    description:
+      'Сравнивает каждый проект с прямыми конкурентами, а не со всем рынком: внутри ' +
+      'сектора считаются перцентили по метрикам профиля, среднее даёт sectorScore.\n\n' +
+      'Лидер — тот, кто СНАЧАЛА прошёл абсолютный порог alpha.qualify и ТОЛЬКО ПОТОМ ' +
+      'попал в топ alpha.perSector. Топ-5 не добивается ради числа: лидер сектора ' +
+      'из двух убыточных — не вывод.\n\n' +
+      'Три списка, а не один. leaders — альфа. sectorsWithoutComparison — секторы, ' +
+      'где сравнивать не с кем: там честно нет лидера, а не назначен единственный ' +
+      'участник. needsManualData — крупные и ликвидные токены без финансовых данных: ' +
+      'это рабочая очередь на ручной сбор, а не отбросы.\n\n' +
+      'В сеть не ходит, снимок не меняет. Без profileId считает рабочим отбором, ' +
+      'который задал последний POST /universe/screen — так меняются perSector и ' +
+      'minSectorSize без пересборки вселенной.',
+  })
+  @ApiQuery({
+    name: 'profileId',
+    required: false,
+    type: String,
+    description: 'Разово посмотреть другим отбором. Рабочий отбор при этом не меняется',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description:
+      'Сколько строк вернуть в needsManualData. По умолчанию 50, максимум 500. ' +
+      'Полное число — в totals.needsManualData',
+  })
+  @ApiOkResponse({ type: UniverseAlphaResponseDto })
+  async alpha(
+    @Query('profileId') profileId?: string,
+    @Query('limit') limit?: string,
+  ): Promise<UniverseAlphaResponseDto> {
+    const report = await this.universe.alpha(profileId);
+    const size = Number(limit);
+    const take = Number.isFinite(size) && size > 0 ? Math.min(size, 500) : 50;
+    return { ...report, needsManualData: report.needsManualData.slice(0, take) };
   }
 
   @Get()

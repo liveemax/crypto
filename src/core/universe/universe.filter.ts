@@ -33,7 +33,7 @@ export class UniverseFilter {
       let dropped = 0;
       for (const item of candidates) {
         if (!item.passed) continue;
-        if (passes(rule, item, excluded)) continue;
+        if (passesRule(rule, item, excluded)) continue;
         item.passed = false;
         item.tier = 'rejected';
         item.rejectedAt = rule.stage;
@@ -54,8 +54,12 @@ export class UniverseFilter {
   }
 }
 
-/** Выполняет одно правило профиля без побочных эффектов. */
-function passes(
+/**
+ * Выполняет одно правило профиля без побочных эффектов.
+ * Экспортируется: альфа проверяет им qualify и manualCandidates — вторая копия
+ * сравнения разъедется с воронкой за один шаг и отсеет не тех.
+ */
+export function passesRule(
   rule: ScreenRule,
   item: UniverseCandidate,
   excluded: Set<string>,

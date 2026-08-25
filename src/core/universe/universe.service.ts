@@ -4,7 +4,9 @@ import { DEFAULT_PROFILE, getProfile } from '../../config/profiles';
 import { StoreService } from '../store/store.service';
 import { UniverseBuilder } from './universe.builder';
 import { UniverseFilter } from './universe.filter';
+import { buildAlpha } from './alpha';
 import { parseAnalysisProfile } from './profile.schema';
+import type { AlphaReport } from './alpha.types';
 import type { AnalysisProfile } from './profile.types';
 import {
   BuildProgressEvent,
@@ -510,6 +512,23 @@ export class UniverseService {
   async view(profileId?: string): Promise<UniverseScreenResult> {
     const snapshot = await this.requireLatest();
     return this.screenSnapshot(snapshot, this.profileOr(profileId));
+  }
+
+  /**
+   * Лидеры секторов по указанному отбору, без отбора — по рабочему.
+   * Состав вычисляется профилем на месте: вшитые в снимок флаги не читаются.
+   */
+  async alpha(profileId?: string): Promise<AlphaReport> {
+    const snapshot = await this.requireLatest();
+    const { profile, candidates } = this.screenSnapshot(
+      snapshot,
+      this.profileOr(profileId),
+    );
+    return buildAlpha(candidates, profile, {
+      universeVersion: snapshot.version,
+      builtAt: snapshot.builtAt,
+      excluded: new Set(snapshot.excludedIds),
+    });
   }
 
   /** passed и tiers активного отбора — то, что показывает status. */

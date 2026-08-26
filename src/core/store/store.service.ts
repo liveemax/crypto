@@ -57,6 +57,27 @@ export class StoreService {
     return this.loadLatest<T>(join(this.root, 'snapshots'), prefix, onDate === undefined);
   }
 
+  /**
+   * Сохраняет изменяемое состояние поверх прежнего. В отличие от снапшота у него
+   * ровно одна актуальная версия: история включений фильтра — это лог, а не данные.
+   */
+  async saveState<T>(name: string, value: T): Promise<string> {
+    const path = join(this.root, 'state', `${this.safe(name)}.json`);
+    await this.writeJson(path, value, true);
+    return path;
+  }
+
+  /** Читает изменяемое состояние; файла нет — null, а не исключение. */
+  async loadState<T>(name: string): Promise<T | null> {
+    const path = join(this.root, 'state', `${this.safe(name)}.json`);
+    try {
+      return await this.readJson<T>(path);
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return null;
+      throw error;
+    }
+  }
+
   /** Сохраняет результат агента в каталоге текущей даты. */
   async saveResult(agent: string, token: string, result: unknown): Promise<string> {
     const dir = join(this.root, 'results', this.today(), this.safe(agent));

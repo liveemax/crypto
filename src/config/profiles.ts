@@ -72,48 +72,51 @@ const BASE_SCREEN: ScreenRule[] = [
   },
 ];
 
+/**
+ * Альфа — cap, а не второй screen: абсолютных порогов здесь нет намеренно.
+ * minRankedValues 3 — перцентиль из двух известных чисел это 0 и 100, а не измерение.
+ * minScoreMetrics 2 — по одной метрике из шести место в нише не присуждается.
+ *
+ * Метрики идут парами «масштаб + оценка», потому что одиночная метрика правило
+ * двух не проходит: у сети есть комиссии, но нет ни выручки, ни TVL, и без пары
+ * fees12mUsd + pFees она остаётся несравнимой при полностью измеренной экономике.
+ *
+ * Комиссии — валовый оборот, выручка — то, что осталось протоколу: pFees 5 и
+ * pRev 5 разные вещи. Смешения при этом нет — перцентиль каждой метрики
+ * считается только среди тех, у кого она есть. На прогоне 26.08 fees12mUsd и
+ * pFees оказались общей линейкой всех сравнимых участников каждой ниши, а
+ * выручка добавляется сверху там, где измерена.
+ */
 const DEFAULT_ALPHA: AnalysisProfile['alpha'] = {
   perSector: 5,
-  minSectorSize: 3,
-  includeTiers: ['yield', 'economics'],
-  qualify: [
-    rule(
-      'alpha_mcap',
-      'Капитализация не ниже 50 млн USD',
-      'mcapCalcUsd',
-      'gte',
-      50_000_000,
-    ),
-    rule(
-      'alpha_revenue',
-      'Выручка не ниже 1 млн USD',
-      'revenue12mUsd',
-      'gte',
-      1_000_000,
-    ),
-    rule('alpha_p_rev', 'P/Rev не выше 60', 'pRev', 'lte', 60),
-  ],
+  minRankedValues: 3,
+  minScoreMetrics: 2,
   rankBy: [
     { field: 'holderYieldPct', direction: 'higher_better' },
+    { field: 'holdersRevenue12mUsd', direction: 'higher_better' },
     { field: 'revenue12mUsd', direction: 'higher_better' },
-    { field: 'revenuePerTvlPct', direction: 'higher_better' },
     { field: 'pRev', direction: 'lower_better' },
+    { field: 'fees12mUsd', direction: 'higher_better' },
+    { field: 'pFees', direction: 'lower_better' },
+    { field: 'revenuePerTvlPct', direction: 'higher_better' },
   ],
-  manualCandidates: [
-    rule(
-      'manual_mcap',
-      'Капитализация не ниже 50 млн USD',
-      'mcapCalcUsd',
-      'gte',
-      50_000_000,
-    ),
-    rule(
-      'manual_liquid',
-      'Суточный объём не ниже 500 тыс. USD',
-      'vol24hUsd',
-      'gte',
-      500_000,
-    ),
+};
+
+/**
+ * Та же механика, другой порядок вопросов: сначала дешевизна, потом масштаб.
+ * Порядок на балл не влияет — sectorScore это среднее доступных перцентилей, —
+ * но он виден в отчёте и объясняет, чем профиль отличается от базового.
+ */
+const DEEP_VALUE_ALPHA: AnalysisProfile['alpha'] = {
+  ...DEFAULT_ALPHA,
+  rankBy: [
+    { field: 'pRev', direction: 'lower_better' },
+    { field: 'pFees', direction: 'lower_better' },
+    { field: 'revenuePerTvlPct', direction: 'higher_better' },
+    { field: 'revenue12mUsd', direction: 'higher_better' },
+    { field: 'fees12mUsd', direction: 'higher_better' },
+    { field: 'holderYieldPct', direction: 'higher_better' },
+    { field: 'holdersRevenue12mUsd', direction: 'higher_better' },
   ],
 };
 
@@ -148,8 +151,8 @@ export const YIELD_HUNTER_PROFILE: AnalysisProfile = {
   screen: [
     ...BASE_SCREEN,
     // 'pass': монета без финансовых данных не провалила порог — её не измеряли.
-    // Она остаётся в тире pool и попадает в очередь на ручной сбор данных;
-    // из ранжирования её убирает alpha.includeTiers, а не воронка.
+    // Она остаётся в тире pool; в перенасыщенном секторе альфа пометит её
+    // alpha_unrankable и отправит в dataGaps, в маленьком — оставит как есть.
     rule('holder_yield', 'Доходность держателя не ниже 1%', 'holderYieldPct', 'gte', 1, 'pass'),
     rule(
       'payout_ratio',
@@ -160,7 +163,6 @@ export const YIELD_HUNTER_PROFILE: AnalysisProfile = {
       'pass',
     ),
   ],
-  alpha: { ...DEFAULT_ALPHA, includeTiers: ['yield'] },
 };
 
 export const DEEP_VALUE_PROFILE: AnalysisProfile = {
@@ -179,6 +181,7 @@ export const DEEP_VALUE_PROFILE: AnalysisProfile = {
     rule('deep_value_p_rev', 'P/Rev не выше 15', 'pRev', 'lte', 15, 'pass'),
     rule('deep_value_take_rate', 'Take rate не ниже 10%', 'takeRatePct', 'gte', 10, 'pass'),
   ],
+  alpha: DEEP_VALUE_ALPHA,
 };
 
 export const BUILTIN_PROFILES: readonly AnalysisProfile[] = [

@@ -1,4 +1,7 @@
 import type { AnalysisProfile } from './profile.types';
+import type { ActiveFilterState, FilterName } from './filter-state.types';
+import type { AlphaDataGap, AlphaSectorSummary, AlphaView } from './alpha.types';
+import type { AssetArchetype, DataState } from './comparison.types';
 
 export type RevenueBasis = 'reported_1y' | 'run_rate_30d' | 'none';
 export type MatchSource = 'gecko_id' | 'chain' | 'override' | 'none';
@@ -39,7 +42,18 @@ export interface UniverseCandidate {
   marketAsOf: string | null;
 
   defillamaSlugs: string[];
+  /** Категория DeFiLlama как пришла: способ зарабатывать, а не тема. */
   sector: string | null;
+  /** Категории CoinGecko из карты, в которых состоит монета. */
+  rawSectors: string[];
+  /**
+   * Группа прямых конкурентов, по которой сравнивает альфа. null — сравнивать
+   * не с кем: это пробел покрытия, а не вердикт о токене.
+   */
+  comparisonGroup: string | null;
+  assetArchetype: AssetArchetype;
+  /** Почему выручка такая, какая есть. Ноль с источником — не отсутствие. */
+  revenueState: DataState;
   matchedBy: MatchSource | 'symbol';
   tvlUsd: number | null;
   tvlSource: string | null;
@@ -75,6 +89,8 @@ export interface UniverseCandidate {
 }
 
 export interface FunnelStage {
+  /** Какой фильтр отсеял: без него отсев по данным неотличим от отсева по существу. */
+  filter: FilterName;
   stage: string;
   /** Человекочитаемое описание проверки на русском. */
   label: string;
@@ -143,9 +159,13 @@ export interface UniverseSnapshot {
   candidates: UniverseCandidate[];
   /** Идентификаторы из реестров исключений: нужны для повторного отбора без сети. */
   excludedIds: string[];
-  /** Профиль, которым считался funnel в момент сборки. */
-  profileId: string;
-  funnel: FunnelReport;
+  /**
+   * @deprecated Профиль сборки. Не пишется и не читается: истина — activeFilters.
+   * Поле оставлено, чтобы снимки прежнего формата загружались без пересборки.
+   */
+  profileId?: string;
+  /** @deprecated Воронка на момент сборки. Истина — композиция активных фильтров. */
+  funnel?: FunnelReport;
   /** Что не сошлось: пустые страницы, расхождения, незаматченные монеты. */
   warnings: string[];
 }
@@ -159,6 +179,10 @@ export interface UniverseStatus {
   total: number | null;
   passed: number | null;
   tiers: Record<Tier, number> | null;
+  /** Чем получены passed и tiers. Композиция независимых фильтров, а не одно имя. */
+  activeFilters: ActiveFilterState;
+  /** @deprecated Алиас activeFilters.screen.profileId. */
+  profileId: string | null;
 }
 
 export interface UniverseRefreshResult {
@@ -181,6 +205,55 @@ export interface UniverseScreenResult {
   profile: AnalysisProfile;
   funnel: FunnelReport;
   candidates: UniverseCandidate[];
+}
+
+/** Кандидат плюс решение фильтров о нём. Представление, а не мутация фактов. */
+export interface CandidateView extends UniverseCandidate {
+  /** null — фильтр альфы выключен: сравнения не было, а не «сравнили и никак». */
+  alpha: AlphaView | null;
+}
+
+/** Текущий результат: факты снимка плюс решения всех включённых фильтров. */
+export interface UniverseView {
+  universeVersion: string;
+  builtAt: string;
+  activeFilters: ActiveFilterState;
+  funnel: FunnelReport;
+  candidates: CandidateView[];
+  /** Сводка альфы, если она включена. */
+  sectors: AlphaSectorSummary[];
+  dataGaps: AlphaDataGap[];
+  warnings: string[];
+}
+
+/** Ответ на включение или выключение одного фильтра. */
+export interface ScreenApplyResult {
+  universeVersion: string;
+  builtAt: string;
+  activeFilters: ActiveFilterState;
+  /** Кандидатов на входе фильтра. */
+  before: number;
+  /** Кандидатов после него — оно же status.passed. */
+  after: number;
+  funnel: FunnelReport;
+}
+
+export interface AlphaApplyResult {
+  universeVersion: string;
+  builtAt: string;
+  activeFilters: ActiveFilterState;
+  /** Вход альфы: survivors screen, а при выключенном screen — весь снимок. */
+  before: number;
+  after: number;
+  dropped: number;
+  sectors: AlphaSectorSummary[];
+  /** Страница очереди пробелов; полное число — в dataGapsTotal. */
+  dataGaps: AlphaDataGap[];
+  dataGapsTotal: number;
+  funnel: FunnelReport;
+  warnings: string[];
+  /** Уже пересчитанный статус: второй запрос за тем же числом не нужен. */
+  status: UniverseStatus;
 }
 
 export interface CandidateRef {

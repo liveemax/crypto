@@ -6,6 +6,7 @@ import { UniverseFilter } from '../src/core/universe/universe.filter';
 import { UniverseService } from '../src/core/universe/universe.service';
 import { UniverseCandidate, UniverseSnapshot } from '../src/core/universe/universe.types';
 import { JobService } from '../src/core/jobs/job.service';
+import { FilterStateService } from '../src/core/universe/filter-state.service';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
@@ -28,6 +29,10 @@ function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidat
     marketAsOf: '2026-08-24T11:00:00.000Z',
     defillamaSlugs: ['aave-v3'],
     sector: 'lending',
+    rawSectors: [],
+    comparisonGroup: 'lending',
+    assetArchetype: 'protocol',
+    revenueState: 'available',
     matchedBy: 'gecko_id',
     tvlUsd: 20_000_000_000,
     tvlSource: 'https://defillama.com/protocol/aave-v3',
@@ -110,8 +115,14 @@ describe('UniverseService profiles', () => {
           warnings: [],
         }),
       ),
-    } as unknown as UniverseBuilder;    
-    service = new UniverseService(store, builder, new UniverseFilter(), new JobService());
+    } as unknown as UniverseBuilder;       
+     service = new UniverseService(
+      store,
+      builder,
+      new UniverseFilter(),
+      new JobService(),
+      new FilterStateService(store),
+    );
   });
 
   it('применяет два профиля без сети и не мутирует сохранённый снимок', async () => {
@@ -154,8 +165,8 @@ describe('UniverseService profiles', () => {
     expect(saved).toHaveLength(1);
     const [snapshot] = saved;
     expect(snapshot.builtAt).toBe(builtAtBefore);
-    expect(snapshot.version).toBe(versionBefore);
-    expect(snapshot.profileId).toBe('default');
+    expect(snapshot.version).toBe(versionBefore);    // Сборка больше не консервирует мнение базового профиля в файле фактов.
+    expect(snapshot.profileId).toBeUndefined();
     expect(snapshot.candidates).toHaveLength(current.candidates.length);
   });
 });

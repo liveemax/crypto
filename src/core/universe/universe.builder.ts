@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DISCOVERY, SLUG_OVERRIDES } from '../../config/discovery';
+import { SECTOR_MAP, SectorMapEntry } from '../../config/sector-map';
+import { applyComparisonIdentity, revenueStateOf } from './comparison';
 import { CoingeckoService, CoinMarket } from '../fetch/coingecko.service';
 import {
   chainPageUrl,
@@ -237,6 +239,9 @@ export class UniverseBuilder {
     };
     for (const dataType of FEE_TYPES) sources[dataType] = feesOverviewUrl(dataType);
 
+    const sectorMap = await this.loadSectorMap(loaded, warnings, onProgress);
+    applyComparisonIdentity(candidates, sectorMap, warnings);
+
     return { candidates, sources, excluded, warnings };
   }
 
@@ -278,7 +283,11 @@ export class UniverseBuilder {
       if (!market) {
         warnings.push(`CoinGecko не вернул рыночные данные для ${candidate.coingeckoId}`);
       }
-      return refreshCandidate(candidate, market, totals, warnings);
+      const updated = refreshCandidate(candidate, market, totals, warnings);
+      // Числа изменились — состояние выручки пересчитывается: known_zero прошлого
+      // прогона не должен пережить появление выручки.
+      updated.revenueState = revenueStateOf(updated);
+      return updated;
     });
 
     const sources: Record<string, string> = {};
@@ -370,7 +379,69 @@ export class UniverseBuilder {
     warnings.push(`Всего в списке исключений: ${excluded.size}`);
     return excluded;
   }
+
+  /**
+   * Группы сравнения для монет, которых DeFiLlama не знает. Карта категорий —
+   * в git, под ревью: собирать группы «по похожести» значит получать разный
+   * состав ниши в каждом прогоне.
+   *
+   * В отличие от реестра исключений отказ категории сборку НЕ валит: неприменённая
+   * группа не притворяется работающей — она поднимает долю пробелов, которую видно
+   * числом в GET /universe/coverage и которая ловится гейтом.
+   */
+  private async loadSectorMap(
+    loaded: number,
+    warnings: string[],
+    onProgress?: (event: BuildProgressEvent) => void,
+  ): Promise<Map<string, SectorMapEntry[]>> {
+    const matched = new Map<string, SectorMapEntry[]>();
+    const failed: string[] = [];
+    let applied = 0;
+
+    for (const [index, entry] of SECTOR_MAP.entries()) {
+      onProgress?.(
+        step('categories', `Группа ${entry.group}`, index, SECTOR_MAP.length, loaded),
+      );
+      const result = await this.coingecko.getCategoryIds(entry.category);
+      const ids = result.ids;
+      if (ids === null || ids.length === 0) {
+        failed.push(`${entry.category} (HTTP ${result.status ?? 'нет ответа'})`);
+        continue;
+      }
+      applied += 1;
+      for (const id of ids) {
+        // Порядок карты — приоритет, но хранятся ВСЕ совпадения: сеть, попавшая
+        // в тематическую категорию, должна получить следующую подходящую,
+        // а не первую попавшуюся.
+        const list = matched.get(id);
+        if (list) list.push(entry);
+        else matched.set(id, [entry]);
+      }
+      onProgress?.(
+        step(
+          'categories',
+          `Группа ${entry.group}: ${ids.length}`,
+          index + 1,
+          SECTOR_MAP.length,
+          loaded,
+        ),
+      );
+    }
+
+    warnings.push(
+      `Карта секторов: применено ${applied} из ${SECTOR_MAP.length} категорий, ` +
+        `${matched.size} монет попали хотя бы в одну`,
+    );
+    if (failed.length > 0) {
+      warnings.push(
+        `КАРТА СЕКТОРОВ НЕПОЛНАЯ: ${failed.join('; ')}. Доля без группы вырастет — ` +
+          'смотрите GET /universe/coverage, а не эти warnings',
+      );
+    }
+    return matched;
+  }
 }
+
 
 function refreshCandidate(
   candidate: UniverseCandidate,
@@ -703,6 +774,12 @@ function toCandidate(
     pFees: ratio(mcapCalcUsd, fees12mUsd),
     fdvRev: ratio(row.fdvUsd, revenue12mUsd),
     revenuePerTvlPct: tvlYield(revenue12mUsd, group?.tvlUsd ?? null, row.ticker, warnings),
+    // Заполняется вторым проходом: карта категорий грузится один раз на сборку,
+    // а не по монете.
+    rawSectors: [],
+    comparisonGroup: null,
+    assetArchetype: 'other',
+    revenueState: 'source_missing',
     tier: 'pool',
     passed: false,
     rejectedAt: null,

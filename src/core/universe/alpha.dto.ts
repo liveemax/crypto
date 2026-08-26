@@ -1,129 +1,104 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { AlphaConfigDto } from './profile.dto';
 
-export class SectorMemberDto {
-  @ApiProperty({ example: 'uniswap' }) coingeckoId!: string;
-  @ApiProperty({ example: 'UNI' }) ticker!: string;
-  @ApiProperty({ example: 'Uniswap' }) name!: string;
-  @ApiProperty({ enum: ['yield', 'economics', 'pool', 'rejected'], example: 'yield' })
-  tier!: string;
+const DECISIONS = [
+  'kept_top_n',
+  'sector_not_saturated',
+  'alpha_outranked',
+  'alpha_unrankable',
+  'alpha_missing_sector',
+];
+
+export class AlphaSelectionDto {
+  @ApiProperty({
+    example: true,
+    description:
+      'true — включить отбор лидеров ниш, false — выключить и вернуть отсеянных им',
+  })
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiPropertyOptional({
+    example: 'deep-value',
+    enum: ['default', 'yield-hunter', 'deep-value'],
+    description: 'Взять конфигурацию альфы из готового профиля',
+  })
+  @IsOptional()
+  @IsString()
+  profileId?: string;
+
+  @ApiPropertyOptional({
+    type: AlphaConfigDto,
+    description: 'Разовая конфигурация. Вместе с profileId — ошибка',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AlphaConfigDto)
+  alpha?: AlphaConfigDto;
 }
 
 export class SectorPercentileDto {
   @ApiProperty({ example: 'holderYieldPct' }) field!: string;
-  @ApiProperty({ enum: ['higher_better', 'lower_better'], example: 'higher_better' })
-  direction!: string;
-  @ApiProperty({ nullable: true, example: 2.07, description: 'Само число кандидата' })
-  value!: number | null;
+  @ApiProperty({ enum: ['higher_better', 'lower_better'] }) direction!: string;
+  @ApiProperty({ nullable: true, example: 2.07 }) value!: number | null;
   @ApiProperty({
     nullable: true,
     example: 83.33,
     description:
-      'Скольких конкурентов сектора обошёл, % (равные делят место пополам). ' +
-      'null — число неизвестно, сравнивать не с чем или это выброс: это не ноль',
+      'Скольких конкурентов сектора обошёл, %. null — число неизвестно, ' +
+      'сравнивать не с чем или это выброс: ноль здесь означал бы худшего',
   })
   percentile!: number | null;
-  @ApiProperty({ example: 6, description: 'У скольких участников сектора это число есть' })
-  ranked!: number;
+  @ApiProperty({ example: 6 }) ranked!: number;
 }
 
-export class SectorLeaderDto extends SectorMemberDto {
-  @ApiProperty({ example: 'dexs' }) sector!: string;
-  @ApiProperty({ example: 1, description: 'Место среди прошедших qualify' })
-  rankInSector!: number;
-  @ApiProperty({ example: 12, description: 'Участников сектора, с кем считались перцентили' })
-  sectorSize!: number;
-  @ApiProperty({ example: 4, description: 'Сколько участников прошли абсолютный порог' })
-  qualifiedInSector!: number;
-  @ApiProperty({ example: 81.25, description: 'Среднее доступных перцентилей' })
-  sectorScore!: number;
+export class AlphaViewDto {
+  @ApiProperty({ example: 10 }) sectorSize!: number;
+  @ApiProperty({ nullable: true, example: 1 }) rankInSector!: number | null;
+  @ApiProperty({ nullable: true, example: 82.99 }) sectorScore!: number | null;
   @ApiProperty({ type: SectorPercentileDto, isArray: true })
   percentiles!: SectorPercentileDto[];
   @ApiProperty({
     nullable: true,
-    example: 27.52,
-    description: 'Доля в выручке сектора: revenue12mUsd к сумме выручки участников, %',
+    example: 35.38,
+    description: 'Доля в выручке сектора: производное поле ответа, не поле кандидата',
   })
   revenueSharePct!: number | null;
-  @ApiProperty({ nullable: true, example: 1_933_800_000 }) mcapCalcUsd!: number | null;
-  @ApiProperty({ nullable: true, example: 107_000_000 }) revenue12mUsd!: number | null;
-  @ApiProperty({ nullable: true, example: 40_000_000 })
-  holdersRevenue12mUsd!: number | null;
-  @ApiProperty({ nullable: true, example: 2.07 }) holderYieldPct!: number | null;
-  @ApiProperty({ nullable: true, example: 18.5 }) pRev!: number | null;
-  @ApiProperty({ nullable: true, example: 'https://defillama.com/protocol/aave-v3' })
-  revenueSource!: string | null;
-  @ApiProperty({ nullable: true, example: '2026-08-25T10:00:00.000Z' })
-  marketAsOf!: string | null;
+  @ApiProperty({ example: true }) comparisonAvailable!: boolean;
   @ApiProperty({
-    type: [String],
-    example: ['CRV', 'CAKE', 'SUSHI'],
-    description: 'С кем шло сравнение; сам лидер в список не входит',
-  })
-  peers!: string[];
-}
-
-export class SectorWithoutComparisonDto {
-  @ApiProperty({ nullable: true, example: 'domains' }) sector!: string | null;
-  @ApiProperty({
-    enum: ['too_small', 'unknown_sector'],
-    example: 'too_small',
+    enum: DECISIONS,
+    example: 'kept_top_n',
     description:
-      'too_small — участников меньше minSectorSize; unknown_sector — сектор не определён',
+      'sector_not_saturated — сектор мал, отбирать не из чего; ' +
+      'alpha_outranked — проиграл конкуренцию; alpha_unrankable и ' +
+      'alpha_missing_sector — пробел в данных, а не вердикт о токене',
   })
-  reason!: string;
-  @ApiProperty({ example: 1 }) size!: number;
-  @ApiProperty({ type: SectorMemberDto, isArray: true }) members!: SectorMemberDto[];
-  @ApiProperty({ example: 'Участников 1 при пороге сравнения 3' }) note!: string;
+  decision!: string;
+  @ApiProperty({ example: 'Место 1 из 6 сравнимых в секторе dexs' })
+  decisionReason!: string;
+  @ApiProperty({ type: [String], example: ['CAKE', 'CETUS', 'RAY'] }) peers!: string[];
 }
 
-export class ManualDataCandidateDto extends SectorMemberDto {
-  @ApiProperty({ nullable: true, example: null }) sector!: string | null;
-  @ApiProperty({ nullable: true, example: 900_000_000 }) mcapCalcUsd!: number | null;
-  @ApiProperty({ nullable: true, example: 12_400_000 }) vol24hUsd!: number | null;
-  @ApiProperty({ enum: ['gecko_id', 'symbol', 'chain', 'override', 'none'] })
-  matchedBy!: string;
-  @ApiProperty({ type: [String], example: [] }) defillamaSlugs!: string[];
-  @ApiProperty({
-    example: 'Протокол DeFiLlama не найден ни по gecko_id, ни по тикеру группы',
-    description: 'Чего не хватает, чтобы система могла что-то сказать',
-  })
-  reason!: string;
+export class AlphaSectorSummaryDto {
+  @ApiProperty({ nullable: true, example: 'dexs' }) sector!: string | null;
+  @ApiProperty({ example: 10 }) size!: number;
+  @ApiProperty({ example: true, description: 'Участников больше perSector — только такие режутся' })
+  saturated!: boolean;
+  @ApiProperty({ example: 5 }) kept!: number;
+  @ApiProperty({ example: 5 }) dropped!: number;
+  @ApiProperty({ example: 9, description: 'Скольких удалось сравнить' }) ranked!: number;
 }
 
-export class AlphaTotalsDto {
-  @ApiProperty({ example: 607, description: 'Прошло отбор профиля' }) passed!: number;
-  @ApiProperty({ example: 168, description: 'Участвуют в перцентилях: тиры с числами' })
-  ranked!: number;
-  @ApiProperty({ example: 41 }) sectors!: number;
-  @ApiProperty({ example: 18, description: 'Секторов не меньше minSectorSize' })
-  sectorsRanked!: number;
-  @ApiProperty({ example: 23 }) sectorsWithoutComparison!: number;
-  @ApiProperty({ example: 3, description: 'Участники есть, qualify не прошёл никто' })
-  sectorsWithoutLeaders!: number;
-  @ApiProperty({ example: 74 }) leaders!: number;
-  @ApiProperty({ example: 218, description: 'Полное число до применения limit' })
-  needsManualData!: number;
-}
-
-export class UniverseAlphaResponseDto {
-  @ApiProperty({ example: '2026-08-25' }) universeVersion!: string;
-  @ApiProperty({ example: '2026-08-25T06:00:00.000Z' }) builtAt!: string;
-  @ApiProperty({ example: 'default' }) profileId!: string;
-  @ApiProperty({
-    type: AlphaConfigDto,
-    description: 'Чем считали: без параметров альфы выдача непроверяема',
-  })
-  alpha!: AlphaConfigDto;
-  @ApiProperty({ type: AlphaTotalsDto }) totals!: AlphaTotalsDto;
-  @ApiProperty({ type: SectorLeaderDto, isArray: true }) leaders!: SectorLeaderDto[];
-  @ApiProperty({ type: SectorWithoutComparisonDto, isArray: true })
-  sectorsWithoutComparison!: SectorWithoutComparisonDto[];
-  @ApiProperty({ type: ManualDataCandidateDto, isArray: true })
-  needsManualData!: ManualDataCandidateDto[];
-  @ApiProperty({
-    type: [String],
-    example: ['Секторов без лидеров: 3. Участники есть, порог qualify не прошёл никто: domains'],
-  })
-  warnings!: string[];
+export class AlphaDataGapDto {
+  @ApiProperty({ example: 'litecoin' }) coingeckoId!: string;
+  @ApiProperty({ example: 'LTC' }) ticker!: string;
+  @ApiProperty({ nullable: true, example: 'chain' }) sector!: string | null;
+  @ApiProperty({ enum: ['alpha_unrankable', 'alpha_missing_sector'] }) reason!: string;
+  @ApiProperty({ type: [String], example: ['revenue12mUsd'] }) availableMetrics!: string[];
+  @ApiProperty({ type: [String], example: ['holderYieldPct', 'pRev'] })
+  missingMetrics!: string[];
+  @ApiProperty({ example: 'Сравнить не с чем: известных метрик меньше 2 из 4' })
+  note!: string;
 }

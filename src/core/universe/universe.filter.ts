@@ -12,7 +12,7 @@ import type {
 
 @Injectable()
 export class UniverseFilter {
-  /** Прогоняет кандидатов по воронке и расставляет тиры. */
+  /** Прогоняет кандидатов по воронке профиля и расставляет тиры. */
   apply(
     candidates: UniverseCandidate[],
     excluded: Set<string> = new Set(),
@@ -41,23 +41,46 @@ export class UniverseFilter {
         dropped += 1;
       }
       alive = incoming - dropped;
-      stages.push({ stage: rule.stage, label: rule.label, incoming, dropped, kept: alive });
+      stages.push({
+        filter: 'screen',
+        stage: rule.stage,
+        label: rule.label,
+        incoming,
+        dropped,
+        kept: alive,
+      });
     }
 
-    const tiers: Record<Tier, number> = { yield: 0, economics: 0, pool: 0, rejected: 0 };
     for (const item of candidates) {
       if (item.passed) item.tier = tierOf(item);
-      tiers[item.tier] += 1;
     }
 
-    return { total: candidates.length, stages, passed: alive, tiers };
+    return { total: candidates.length, stages, passed: alive, tiers: countTiers(candidates) };
+  }
+
+  /**
+   * Фильтр выключен: проходят все. Тир считается всё равно — он свойство данных,
+   * а не мнение отбора, и должен быть одинаков при любой композиции фильтров.
+   */
+  passAll(candidates: UniverseCandidate[]): FunnelReport {
+    for (const item of candidates) {
+      item.passed = true;
+      item.rejectedAt = null;
+      item.rejectReason = null;
+      item.tier = tierOf(item);
+    }
+    return {
+      total: candidates.length,
+      stages: [],
+      passed: candidates.length,
+      tiers: countTiers(candidates),
+    };
   }
 }
 
 /**
  * Выполняет одно правило профиля без побочных эффектов.
- * Экспортируется: альфа проверяет им qualify и manualCandidates — вторая копия
- * сравнения разъедется с воронкой за один шаг и отсеет не тех.
+ * Экспортируется: вторая копия сравнения разъедется с воронкой за один шаг.
  */
 export function passesRule(
   rule: ScreenRule,
@@ -78,6 +101,21 @@ export function passesRule(
   const actual = item[rule.field];
   if (actual === null) return rule.nullPolicy === 'pass';
   return rule.op === 'gte' ? actual >= rule.value : actual <= rule.value;
+}
+
+/**
+ * Тир, а не отсев: отсутствие финансовых данных — повод не звать агентов,
+ * а не повод выбросить токен из вселенной.
+ */
+export function tierOf(item: UniverseCandidate): Tier {
+  if ((item.holdersRevenue12mUsd ?? 0) > 0) return 'yield';
+  if ((item.revenue12mUsd ?? 0) > 0) return 'economics';
+  return 'pool';
+}
+export function countTiers(candidates: UniverseCandidate[]): Record<Tier, number> {
+  const tiers: Record<Tier, number> = { yield: 0, economics: 0, pool: 0, rejected: 0 };
+  for (const item of candidates) tiers[item.tier] += 1;
+  return tiers;
 }
 
 /** Даёт точную причину для базовых стадий и проверяемую причину для разовых правил. */
@@ -114,16 +152,6 @@ function compareReason(rule: ScreenRule, item: UniverseCandidate): string {
   const value = item[rule.field];
   const operator = rule.op === 'gte' ? 'не ниже' : 'не выше';
   return `${rule.field}: ${value ?? 'нет данных'}, требуется ${operator} ${rule.value}`;
-}
-
-/**
- * Тир, а не отсев: отсутствие финансовых данных — повод не звать агентов,
- * а не повод выбросить токен из вселенной.
- */
-function tierOf(item: UniverseCandidate): Tier {
-  if ((item.holdersRevenue12mUsd ?? 0) > 0) return 'yield';
-  if ((item.revenue12mUsd ?? 0) > 0) return 'economics';
-  return 'pool';
 }
 
 function fmt(value: number | null): string {

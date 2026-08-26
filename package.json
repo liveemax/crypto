@@ -9,7 +9,9 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "test": "jest",
-    "test:e2e": "jest --config test/jest-e2e.json"
+    "test:e2e": "jest --config test/jest-e2e.json",
+    "coverage:check": "node dist/tools/coverage-check.js",
+    "coverage:ci": "nest build && node dist/tools/coverage-check.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
@@ -37,7 +39,11 @@
   },
   "jest": {
     "rootDir": ".",
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {

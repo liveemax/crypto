@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { NUMERIC_FIELDS } from './profile.types';
-import type { AnalysisProfile } from './profile.types';
+import type { AlphaConfig, AnalysisProfile } from './profile.types';
 
 const compareRuleSchema = z
   .object({
@@ -27,29 +27,36 @@ const screenRuleSchema = z.discriminatedUnion('kind', [
   namedRuleSchema,
 ]);
 
+const alphaConfigSchema = z
+  .object({
+    perSector: z.number().int().positive(),
+    minRankedValues: z.number().int().positive(),
+    minScoreMetrics: z.number().int().positive(),
+    rankBy: z
+      .array(
+        z.object({
+          field: z.enum(NUMERIC_FIELDS),
+          direction: z.enum(['higher_better', 'lower_better']),
+        }),
+      )
+      .min(1),
+  })
+  .strict()
+  .refine((config) => config.minScoreMetrics <= config.rankBy.length, {
+    message: 'minScoreMetrics больше числа метрик: сравнимых участников не будет ни одного',
+  });
+
+/** Проверяет разовую конфигурацию альфы из тела POST /universe/alpha. */
+export function parseAlphaConfig(value: unknown): AlphaConfig {
+  return alphaConfigSchema.parse(dropUndefined(value)) as AlphaConfig;
+}
 const profileSchema = z
   .object({
     id: z.string().trim().regex(/^[a-z0-9][a-z0-9-]*$/),
     title: z.string().trim().min(1),
     rationale: z.string().trim().min(1),
     screen: z.array(screenRuleSchema).min(1),
-    alpha: z.object({
-      perSector: z.number().int().positive(),
-      minSectorSize: z.number().int().positive(),
-      includeTiers: z
-        .array(z.enum(['yield', 'economics', 'pool', 'rejected']))
-        .min(1),
-      qualify: z.array(screenRuleSchema),
-      rankBy: z
-        .array(
-          z.object({
-            field: z.enum(NUMERIC_FIELDS),
-            direction: z.enum(['higher_better', 'lower_better']),
-          }),
-        )
-        .min(1),
-      manualCandidates: z.array(screenRuleSchema),
-    }),
+    alpha: alphaConfigSchema,
     thresholds: z.object({
       minMcapUsd: z.number().finite().nonnegative(),
       minAnnualRevenueUsd: z.number().finite().nonnegative(),
@@ -76,7 +83,26 @@ const profileSchema = z
   })
   .strict();
 
+/**
+ * Убирает ключи без значения. class-transformer материализует необязательные
+ * поля DTO как undefined, strict-схема считает их лишними, и профиль, скачанный
+ * из GET /config/profiles, не проходит валидацию собственного сервиса.
+ *
+ * Строгость сохраняется: настоящий лишний ключ приходит СО значением и будет
+ * отклонён. Выбрасывается только артефакт трансформации.
+ */
+function dropUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(dropUndefined);
+  if (value === null || typeof value !== 'object') return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (item === undefined) continue;
+    result[key] = dropUndefined(item);
+  }
+  return result;
+}
+
 /** Проверяет разовый профиль и возвращает нормализованный контракт. */
 export function parseAnalysisProfile(value: unknown): AnalysisProfile {
-  return profileSchema.parse(value) as AnalysisProfile;
+  return profileSchema.parse(dropUndefined(value)) as AnalysisProfile;
 }

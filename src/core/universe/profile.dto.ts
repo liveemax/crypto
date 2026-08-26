@@ -60,38 +60,39 @@ export class RankMetricDto {
 }
 
 export class AlphaConfigDto {
-  @ApiProperty({ example: 5 })
+  @ApiProperty({
+    example: 5,
+    description:
+      'Сколько участников оставлять в перенасыщенном секторе. Сектор размером ' +
+      'не больше этого числа не режется вовсе, включая сектор из одного',
+  })
   @IsInt()
   @Min(1)
   perSector!: number;
 
-  @ApiProperty({ example: 3 })
+  @ApiProperty({
+    example: 3,
+    description: 'Минимум известных значений в секторе, чтобы метрика дала перцентиль',
+  })
   @IsInt()
   @Min(1)
-  minSectorSize!: number;
+  minRankedValues!: number;
 
-  @ApiProperty({ enum: ['yield', 'economics', 'pool', 'rejected'], isArray: true })
-  @IsArray()
-  @IsIn(['yield', 'economics', 'pool', 'rejected'], { each: true })
-  includeTiers!: string[];
-
-  @ApiProperty({ type: ScreenRuleDto, isArray: true })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ScreenRuleDto)
-  qualify!: ScreenRuleDto[];
+  @ApiProperty({
+    example: 2,
+    description:
+      'Минимум непустых перцентилей, чтобы участник считался сравнимым. ' +
+      'Меньше — пробел в данных, а не последнее место',
+  })
+  @IsInt()
+  @Min(1)
+  minScoreMetrics!: number;
 
   @ApiProperty({ type: RankMetricDto, isArray: true })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RankMetricDto)
   rankBy!: RankMetricDto[];
-
-  @ApiProperty({ type: ScreenRuleDto, isArray: true })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ScreenRuleDto)
-  manualCandidates!: ScreenRuleDto[];
 }
 
 export class ProfileThresholdsDto {

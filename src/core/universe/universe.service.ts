@@ -3,17 +3,28 @@ import { DISCOVERY } from '../../config/discovery';
 import { DEFAULT_PROFILE, getProfile } from '../../config/profiles';
 import { StoreService } from '../store/store.service';
 import { UniverseBuilder } from './universe.builder';
-import { UniverseFilter } from './universe.filter';
-import { buildAlpha } from './alpha';
-import { parseAnalysisProfile } from './profile.schema';
-import type { AlphaReport } from './alpha.types';
+import { UniverseFilter, countTiers } from './universe.filter';
+import { applyAlpha } from './alpha';
+import { buildCoverage } from './coverage';
+import type { CoverageReport } from './coverage.types';
+import { parseAlphaConfig, parseAnalysisProfile } from './profile.schema';
+import { FilterStateService } from './filter-state.service';
+import type {
+  ActiveFilterState,
+  AlphaFilterState,
+  AlphaSelectionRequest,
+  ScreenFilterState,
+  ScreenSelectionRequest,
+} from './filter-state.types';
+import type { AlphaOutcome } from './alpha';
+import type { CandidateView } from './universe.types';
 import type { AnalysisProfile } from './profile.types';
 import {
   BuildProgressEvent,
   CandidateRef,
-  FunnelReport,
+  AlphaApplyResult,
   ProfileReference,
-  ProfileSelection,
+  ScreenApplyResult,
   TierChange,
   UniverseCandidate,
   UniverseCompareResult,
@@ -22,6 +33,7 @@ import {
   UniverseScreenResult,
   UniverseSnapshot,
   UniverseStatus,
+  UniverseView,
 } from './universe.types';
 import { JobService } from '../jobs/job.service';
 
@@ -54,18 +66,12 @@ export class UniverseService {
   private inFlight: Promise<void> | null = null;
   private startedAtMs = 0;
   private failures = 0;
-      /**
-   * Отбор, выбранный последним POST /universe/screen. Снимок фактов он не
-   * трогает — меняется только то, какой ответ на них считается рабочим.
-   * Живёт в памяти процесса: после перезапуска сбрасывается на базовый.
-   */
-  private activeProfile: AnalysisProfile = DEFAULT_PROFILE;
-
   constructor(
     private readonly store: StoreService,
     private readonly builder: UniverseBuilder,
     private readonly filter: UniverseFilter,
     private readonly jobs: JobService,
+    private readonly filters: FilterStateService,
   ) {}
 
   /** Возвращает последний сохранённый состав вселенной или null. */
@@ -81,17 +87,21 @@ export class UniverseService {
     return Number.isFinite(built) ? Math.floor((Date.now() - built) / DAY_MS) : null;
   }
 
-  /** Возвращает кандидатов, прошедших отбор профиля; вшитые в снимок флаги не используются. */
-  async passed(profile: AnalysisProfile = DEFAULT_PROFILE): Promise<UniverseCandidate[]> {
+  /** Кандидаты, прошедшие все включённые фильтры; вшитые в снимок флаги не читаются. */
+  async passed(): Promise<UniverseCandidate[]> {
     const snapshot = await this.latest();
     if (!snapshot) return [];
-    return this.screenSnapshot(snapshot, profile).candidates.filter((item) => item.passed);
+    const view = this.compose(snapshot, await this.filters.current());
+    return view.candidates.filter((item) => item.passed);
   }
 
-  /** Применяет профиль к последнему снимку без сети и без изменения снимка. */
-  async screen(selection: ProfileSelection = {}): Promise<UniverseScreenResult> {
+  /**
+   * Разовый расчёт по произвольному профилю: состояние не меняет, в сеть не ходит.
+   * Это не «второй рабочий отбор», а вычисление для сравнения профилей.
+   */
+  async screen(reference: ProfileReference = {}): Promise<UniverseScreenResult> {
     const snapshot = await this.requireLatest();
-    return this.screenSnapshot(snapshot, this.resolveProfile(selection));
+    return this.screenSnapshot(snapshot, this.resolveProfile(reference));
   }
 
   /** Сравнивает два профиля на одном неизменном снимке без сетевых запросов. */
@@ -224,12 +234,8 @@ export class UniverseService {
       ...snapshot,
       sources: { ...snapshot.sources, ...output.sources },
       candidates: output.candidates,
-      profileId: DEFAULT_PROFILE.id,
-      funnel: this.filter.apply(
-        output.candidates,
-        new Set(snapshot.excludedIds),
-        DEFAULT_PROFILE,
-      ),
+      profileId: undefined,
+      funnel: undefined,
       warnings: [...new Set([...snapshot.warnings, ...output.warnings])],
     };
 
@@ -326,9 +332,11 @@ export class UniverseService {
     if (this.inFlight) await this.inFlight;
   }
 
-  /** Возвращает счётчик пересборки и сводку по последнему составу. */
+  /** Счётчик пересборки и текущий результат композиции фильтров. */
   async status(): Promise<UniverseStatus> {
     const snapshot = await this.latest();
+    const activeFilters = await this.filters.current();
+    const view = snapshot ? this.compose(snapshot, activeFilters) : null;
     return {
       state: this.state,
       progress: this.withElapsed(this.progress),
@@ -336,8 +344,10 @@ export class UniverseService {
       version: snapshot?.version ?? null,
       ageDays: await this.ageDays(),
       total: snapshot?.candidates.length ?? null,
-      passed: snapshot?.funnel.passed ?? null,
-      tiers: snapshot?.funnel.tiers ?? null,
+      passed: view?.funnel.passed ?? null,
+      tiers: view?.funnel.tiers ?? null,
+      activeFilters,
+      profileId: activeFilters.screen.enabled ? activeFilters.screen.profileId : null,
     };
   }
 
@@ -353,7 +363,13 @@ export class UniverseService {
       failed: false,
       error: null,
     });
-    const funnel = this.filter.apply(output.candidates, output.excluded, DEFAULT_PROFILE);
+    // Воронка считается на копиях и только ради строки лога: мнение базового
+    // профиля не консервируется в файле фактов и не переживает смену фильтра.
+    const funnel = this.filter.apply(
+      output.candidates.map((candidate) => ({ ...candidate })),
+      output.excluded,
+      DEFAULT_PROFILE,
+    );
 
     const snapshot: UniverseSnapshot = {
       version: new Date().toISOString().slice(0, 10),
@@ -362,11 +378,8 @@ export class UniverseService {
       sources: output.sources,
       candidates: output.candidates,
       excludedIds: [...output.excluded].sort(),
-      profileId: DEFAULT_PROFILE.id,
-      funnel,
       warnings: output.warnings,
     };
-
     const previous = await this.latest();
     if (previous) snapshot.warnings.push(...diff(previous, snapshot));
 
@@ -497,61 +510,210 @@ export class UniverseService {
     }
   }
 
-    /** Запоминает выбранный отбор: он становится рабочим для status, funnel и списка. */
-  setActive(profile: AnalysisProfile): void {
-    this.activeProfile = profile;
-  }
-
-  /** Профиль по имени, а без имени — активный. */
-  profileOr(profileId?: string): AnalysisProfile {
-    const id = profileId?.trim();
-    return id ? this.requireBuiltin(id) : this.activeProfile;
-  }
-
-  /** Воронка и кандидаты указанного отбора: ноль запросов, снимок не меняется. */
-  async view(profileId?: string): Promise<UniverseScreenResult> {
+  /** Текущий результат: ноль сетевых запросов, снимок не меняется. */
+  async view(): Promise<UniverseView> {
     const snapshot = await this.requireLatest();
-    return this.screenSnapshot(snapshot, this.profileOr(profileId));
+    return this.compose(snapshot, await this.filters.current());
   }
 
   /**
-   * Лидеры секторов по указанному отбору, без отбора — по рабочему.
-   * Состав вычисляется профилем на месте: вшитые в снимок флаги не читаются.
+   * Покрытие групп сравнения на входе альфы. Сама альфа при подсчёте выключается:
+   * иначе включённый фильтр улучшает метрику, удаляя как раз тех, кого не покрыли.
    */
-  async alpha(profileId?: string): Promise<AlphaReport> {
+  async coverage(): Promise<CoverageReport> {
     const snapshot = await this.requireLatest();
-    const { profile, candidates } = this.screenSnapshot(
-      snapshot,
-      this.profileOr(profileId),
+    const state = await this.filters.current();
+    const input = this.compose(snapshot, {
+      ...state,
+      alpha: { ...state.alpha, enabled: false },
+    });
+    return buildCoverage(
+      input.candidates.filter((item) => item.passed),
+      {
+        universeVersion: input.universeVersion,
+        builtAt: input.builtAt,
+        activeFilters: state,
+      },
     );
-    return buildAlpha(candidates, profile, {
+  }
+
+  /** Включает или выключает фильтр шлака и сохраняет состояние на диск. */
+  async applyScreen(request: ScreenSelectionRequest): Promise<ScreenApplyResult> {
+    const snapshot = await this.requireLatest();
+    const previous = await this.filters.current();
+    const next: ActiveFilterState = {
+      ...previous,
+      screen: this.nextScreenState(request, previous.screen),
+    };
+    await this.filters.save(next);
+
+    const view = this.compose(snapshot, next);
+    return {
+      universeVersion: view.universeVersion,
+      builtAt: view.builtAt,
+      activeFilters: next,
+      before: view.funnel.total,
+      after: view.funnel.passed,
+      funnel: view.funnel,
+    };
+  }
+
+  /**
+   * Новое состояние фильтра. Выключение не стирает конфигурацию: включить обратно
+   * тем же профилем должно быть одним вызовом, иначе «выключить и посмотреть»
+   * стоит повторного ввода настроек.
+   */
+  private nextScreenState(
+    request: ScreenSelectionRequest,
+    previous: ScreenFilterState,
+  ): ScreenFilterState {
+    if (typeof request.enabled !== 'boolean') {
+      throw new BadRequestException('Поле enabled обязательно: true включает фильтр, false выключает');
+    }
+    if (!request.enabled) {
+      if (request.profileId !== undefined || request.profile !== undefined) {
+        throw new BadRequestException(
+          'При enabled: false профиль не принимается — выключенному фильтру нечего настраивать',
+        );
+      }
+      return { ...previous, enabled: false };
+    }
+
+    const profileId = request.profileId?.trim() || null;
+    const custom = request.profile ?? null;
+    if (profileId !== null && custom !== null) {
+      throw new BadRequestException(
+        'Передайте что-то одно: profileId для готового профиля или profile для разового. ' +
+          'Готовые: default, yield-hunter, deep-value.',
+      );
+    }
+    if (custom !== null) {
+      return { enabled: true, profileId: null, profile: this.parseCustomProfile(custom) };
+    }
+    if (profileId !== null) {
+      const builtin = this.requireBuiltin(profileId);
+      return { enabled: true, profileId: builtin.id, profile: builtin };
+    }
+    if (previous.profile !== null) return { ...previous, enabled: true };
+    return { enabled: true, profileId: DEFAULT_PROFILE.id, profile: DEFAULT_PROFILE };
+  }
+
+  /** Включает или выключает отбор лидеров ниш и сохраняет состояние на диск. */
+  async applyAlphaFilter(request: AlphaSelectionRequest): Promise<AlphaApplyResult> {
+    const snapshot = await this.requireLatest();
+    const previous = await this.filters.current();
+    const next: ActiveFilterState = {
+      ...previous,
+      alpha: this.nextAlphaState(request, previous.alpha),
+    };
+    await this.filters.save(next);
+
+    const view = this.compose(snapshot, next);
+    const alphaStage = view.funnel.stages.find((stage) => stage.filter === 'alpha');
+    return {
+      universeVersion: view.universeVersion,
+      builtAt: view.builtAt,
+      activeFilters: next,
+      before: alphaStage?.incoming ?? view.funnel.passed,
+      after: view.funnel.passed,
+      dropped: alphaStage?.dropped ?? 0,
+      sectors: view.sectors,
+      dataGaps: view.dataGaps.slice(0, 50),
+      dataGapsTotal: view.dataGaps.length,
+      funnel: view.funnel,
+      warnings: view.warnings,
+      status: await this.status(),
+    };
+  }
+
+  private nextAlphaState(
+    request: AlphaSelectionRequest,
+    previous: AlphaFilterState,
+  ): AlphaFilterState {
+    if (typeof request.enabled !== 'boolean') {
+      throw new BadRequestException('Поле enabled обязательно: true включает фильтр, false выключает');
+    }
+    if (!request.enabled) {
+      if (request.profileId !== undefined || request.alpha !== undefined) {
+        throw new BadRequestException(
+          'При enabled: false конфигурация не принимается — выключенному фильтру нечего настраивать',
+        );
+      }
+      return { ...previous, enabled: false };
+    }
+
+    const profileId = request.profileId?.trim() || null;
+    const custom = request.alpha ?? null;
+    if (profileId !== null && custom !== null) {
+      throw new BadRequestException(
+        'Передайте что-то одно: profileId готового профиля или alpha для разовой конфигурации',
+      );
+    }
+    if (custom !== null) {
+      try {
+        return { enabled: true, profileId: null, config: parseAlphaConfig(custom) };
+      } catch (error: unknown) {
+        const details = error instanceof Error ? `: ${error.message}` : '';
+        throw new BadRequestException(`Разовая конфигурация альфы не соответствует контракту${details}`);
+      }
+    }
+    if (profileId !== null) {
+      const builtin = this.requireBuiltin(profileId);
+      return { enabled: true, profileId: builtin.id, config: builtin.alpha };
+    }
+    if (previous.config !== null) return { ...previous, enabled: true };
+    return { enabled: true, profileId: DEFAULT_PROFILE.id, config: DEFAULT_PROFILE.alpha };
+  }
+
+  /**
+   * Собирает представление из фактов и включённых фильтров. Порядок фиксирован
+   * кодом, а не порядком HTTP-вызовов; копии кандидатов не дают мутировать снимок.
+   */
+  private compose(snapshot: UniverseSnapshot, state: ActiveFilterState): UniverseView {
+    const candidates: CandidateView[] = snapshot.candidates.map((candidate) => ({
+      ...candidate,
+      defillamaSlugs: [...candidate.defillamaSlugs],
+      alpha: null,
+    }));
+
+    // Порядок задан кодом, а не порядком HTTP-вызовов: альфа всегда считается
+    // поверх выхода screen, даже если её включили раньше.
+    const funnel =
+      state.screen.enabled && state.screen.profile !== null
+        ? this.filter.apply(candidates, new Set(snapshot.excludedIds), state.screen.profile)
+        : this.filter.passAll(candidates);
+
+    let outcome: AlphaOutcome | null = null;
+    if (state.alpha.enabled && state.alpha.config !== null) {
+      outcome = applyAlpha(candidates, state.alpha.config);
+      funnel.stages.push(outcome.stage);
+      funnel.passed = outcome.stage.kept;
+      funnel.tiers = countTiers(candidates);
+    }
+
+    return {
       universeVersion: snapshot.version,
       builtAt: snapshot.builtAt,
-      excluded: new Set(snapshot.excludedIds),
-    });
-  }
-
-  /** passed и tiers активного отбора — то, что показывает status. */
-  async activeSummary(): Promise<{
-    profileId: string;
-    passed: number;
-    tiers: FunnelReport['tiers'];
-  } | null> {
-    const snapshot = await this.latest();
-    if (!snapshot) return null;
-    const { profile, funnel } = this.screenSnapshot(snapshot, this.activeProfile);
-    return { profileId: profile.id, passed: funnel.passed, tiers: funnel.tiers };
+      activeFilters: state,
+      funnel,
+      candidates,
+      sectors: outcome?.sectors ?? [],
+      dataGaps: outcome?.dataGaps ?? [],
+      warnings: outcome?.warnings ?? [],
+    };
   }
 }
-
 function candidateRef(candidate: UniverseCandidate): CandidateRef {
   return { coingeckoId: candidate.coingeckoId, ticker: candidate.ticker };
 }
 
-/** Описывает изменение состава относительно прошлой вселенной. */
+/**
+ * Описывает изменение состава относительно прошлой вселенной. Сравнивается весь
+ * состав, а не «прошедшие»: кто прошёл — зависит от фильтра, а не от сборки.
+ */
 function diff(previous: UniverseSnapshot, current: UniverseSnapshot): string[] {
-  const before = new Set(previous.candidates.filter((i) => i.passed).map((i) => i.ticker));
-  const after = new Set(current.candidates.filter((i) => i.passed).map((i) => i.ticker));
+  const before = new Set(previous.candidates.map((i) => i.ticker));
+  const after = new Set(current.candidates.map((i) => i.ticker));
   const added = [...after].filter((ticker) => !before.has(ticker));
   const removed = [...before].filter((ticker) => !after.has(ticker));
   return [

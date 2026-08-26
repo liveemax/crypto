@@ -1,10 +1,11 @@
+import { BadRequestException } from '@nestjs/common';
 import { DEFAULT_PROFILE } from '../src/config/profiles';
 import { JobService } from '../src/core/jobs/job.service';
 import { StoreService } from '../src/core/store/store.service';
+import { FilterStateService } from '../src/core/universe/filter-state.service';
 import { UniverseBuilder } from '../src/core/universe/universe.builder';
 import { UniverseFilter } from '../src/core/universe/universe.filter';
 import { UniverseService } from '../src/core/universe/universe.service';
-import type { AnalysisProfile } from '../src/core/universe/profile.types';
 import { UniverseCandidate, UniverseSnapshot } from '../src/core/universe/universe.types';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
@@ -28,6 +29,10 @@ function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidat
     marketAsOf: '2026-08-25T10:00:00.000Z',
     defillamaSlugs: ['base'],
     sector: 'dexs',
+    rawSectors: [],
+    comparisonGroup: 'dexs',
+    assetArchetype: 'protocol',
+    revenueState: 'available',
     matchedBy: 'gecko_id',
     tvlUsd: 1_000_000_000,
     tvlSource: 'https://defillama.com/protocol/base',
@@ -46,8 +51,8 @@ function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidat
     pFees: 5,
     fdvRev: 12.5,
     revenuePerTvlPct: 2,
-    tier: 'yield',
-    passed: true,
+    tier: 'pool',
+    passed: false,
     rejectedAt: null,
     rejectReason: null,
     ...overrides,
@@ -63,111 +68,50 @@ function named(ticker: string, overrides: Partial<UniverseCandidate>): UniverseC
   });
 }
 
-/**
- * Секторы разного размера и разной полноты данных: семь конкурентов, четыре
- * конкурента без лидеров у двоих, сектор из двух, сектор из одного, сектор
- * неизвестен, плюс два токена без экономики.
- */
+/** Перенасыщенный сектор, два маленьких, один без сектора и один отсеиваемый screen. */
 function population(): UniverseCandidate[] {
   return [
-    named('DX1', { holderYieldPct: 6, revenue12mUsd: 30_000_000, pRev: 8, revenuePerTvlPct: 3 }),
-    named('DX2', { holderYieldPct: 5, revenue12mUsd: 25_000_000, pRev: 10, revenuePerTvlPct: 2.5 }),
-    // Лучший балл в секторе, но капитализация ниже абсолютного порога qualify.
-    named('DX3', {
-      holderYieldPct: 4.5,
-      revenue12mUsd: 20_000_000,
-      pRev: 9,
-      revenuePerTvlPct: 2.8,
-      mcapCalcUsd: 20_000_000,
-    }),
-    named('DX4', { holderYieldPct: 3, revenue12mUsd: 15_000_000, pRev: 14, revenuePerTvlPct: 1.5 }),
-    // Выброс выручки к TVL: почти всегда склейка чужих комиссий.
-    named('DX5', { holderYieldPct: 2, revenue12mUsd: 10_000_000, pRev: 16, revenuePerTvlPct: 9_000 }),
-    // Доходность держателя не измерена: «неизвестно», а не «ноль».
-    named('DX6', {
+    named('DX1', { holderYieldPct: 6, revenue12mUsd: 30_000_000, revenuePerTvlPct: 3, pRev: 8 }),
+    named('DX2', { holderYieldPct: 5, revenue12mUsd: 25_000_000, revenuePerTvlPct: 2.5, pRev: 10 }),
+    named('DX3', { holderYieldPct: 4, revenue12mUsd: 20_000_000, revenuePerTvlPct: 2, pRev: 12 }),
+    named('DX4', { holderYieldPct: 3, revenue12mUsd: 15_000_000, revenuePerTvlPct: 1.5, pRev: 14 }),
+    named('DX5', { holderYieldPct: 2, revenue12mUsd: 10_000_000, revenuePerTvlPct: 1, pRev: 16 }),
+    named('DX6', { holderYieldPct: 1, revenue12mUsd: 5_000_000, revenuePerTvlPct: 0.5, pRev: 18 }),
+    // Известна одна метрика из семи: сравнить не с чем, но это не «худший».
+    // Комиссии обнулены намеренно — с ними он стал бы сравнимым, и тест
+    // перестал бы проверять то, ради чего написан.
+    named('DX7', {
       holderYieldPct: null,
       holdersRevenue12mUsd: null,
-      revenue12mUsd: 5_000_000,
-      pRev: 18,
-      revenuePerTvlPct: 1,
+      revenue12mUsd: 4_000_000,
+      revenuePerTvlPct: null,
+      tvlUsd: null,
+      pRev: null,
+      fees12mUsd: null,
+      pFees: null,
     }),
-    named('DX7', { holderYieldPct: 1, revenue12mUsd: 4_000_000, pRev: 20, revenuePerTvlPct: 0.8 }),
-
-    named('LN1', {
-      sector: 'lending',
-      holdersRevenue12mUsd: null,
-      holderYieldPct: null,
-      revenue12mUsd: 20_000_000,
-      pRev: 10,
-      revenuePerTvlPct: 1.2,
-    }),
-    named('LN2', {
-      sector: 'lending',
-      holdersRevenue12mUsd: null,
-      holderYieldPct: null,
-      revenue12mUsd: 12_000_000,
-      pRev: 16,
-      revenuePerTvlPct: 0.9,
-    }),
-    named('LN3', {
-      sector: 'lending',
-      holdersRevenue12mUsd: null,
-      holderYieldPct: null,
-      revenue12mUsd: 500_000,
-      pRev: 400,
-      revenuePerTvlPct: 0.1,
-    }),
-    named('LN4', {
-      sector: 'lending',
-      holdersRevenue12mUsd: null,
-      holderYieldPct: null,
-      revenue12mUsd: 400_000,
-      pRev: 500,
-      revenuePerTvlPct: 0.05,
-    }),
-
-    named('YA1', { sector: 'yield-aggregator', revenue12mUsd: 9_000_000, pRev: 22 }),
-    named('YA2', { sector: 'yield-aggregator', revenue12mUsd: 8_000_000, pRev: 24 }),
-    named('DOM', { sector: 'domains', revenue12mUsd: 7_000_000, pRev: 28 }),
-    named('NOSEC', { sector: null, revenue12mUsd: 3_000_000, pRev: 30 }),
-
-    named('BIGPOOL', {
+    named('LN1', { sector: 'lending', comparisonGroup: 'lending', revenue12mUsd: 9_000_000, pRev: 22 }),
+    named('LN2', { sector: 'lending', comparisonGroup: 'lending', revenue12mUsd: 8_000_000, pRev: 24 }),
+    named('DOM', { sector: 'domains', comparisonGroup: 'domains', revenue12mUsd: 7_000_000, pRev: 28 }),
+    named('NOSEC', {
       sector: null,
+      comparisonGroup: null,
+      assetArchetype: 'other',
+      revenueState: 'mapping_failed',
       matchedBy: 'none',
       defillamaSlugs: [],
-      mcapCalcUsd: 900_000_000,
-      vol24hUsd: 30_000_000,
-      tvlUsd: null,
-      fees12mUsd: null,
-      revenue12mUsd: null,
-      holdersRevenue12mUsd: null,
-      holderYieldPct: null,
-      pRev: null,
-      revenuePerTvlPct: null,
-      revenueBasis: 'none',
-      revenueSource: null,
     }),
-    named('SMALLPOOL', {
-      sector: null,
-      matchedBy: 'none',
-      defillamaSlugs: [],
-      mcapCalcUsd: 10_000_000,
-      vol24hUsd: 600_000,
-      tvlUsd: null,
-      fees12mUsd: null,
-      revenue12mUsd: null,
-      holdersRevenue12mUsd: null,
-      holderYieldPct: null,
-      pRev: null,
-      revenuePerTvlPct: null,
-      revenueBasis: 'none',
-      revenueSource: null,
+    // Неликвиден: screen его снимает, альфа при выключенном screen видит.
+    named('DEAD', {
+      sector: 'domains',
+      comparisonGroup: 'domains',
+      vol24hUsd: 1_000,
+      turnoverPct: 0.0001,
     }),
   ];
 }
 
 function snapshotOf(candidates: UniverseCandidate[]): UniverseSnapshot {
-  const funnel = new UniverseFilter().apply(candidates, new Set());
   return {
     version: '2026-08-25',
     builtAt: '2026-08-25T06:00:00.000Z',
@@ -175,134 +119,177 @@ function snapshotOf(candidates: UniverseCandidate[]): UniverseSnapshot {
     sources: {},
     candidates,
     excludedIds: [],
-    profileId: 'default',
-    funnel,
     warnings: [],
   };
 }
 
-function withAlpha(patch: Partial<AnalysisProfile['alpha']>): AnalysisProfile {
-  return { ...DEFAULT_PROFILE, alpha: { ...DEFAULT_PROFILE.alpha, ...patch } };
-}
-
-describe('Приёмка шага 06: альфа по секторам', () => {
+describe('Приёмка шага 06: stateful alpha', () => {
   let current: UniverseSnapshot;
   let saved: UniverseSnapshot[];
+  let state: { value: unknown };
+  let store: StoreService;
   let service: UniverseService;
+
+  function build(): UniverseService {
+    return new UniverseService(
+      store,
+      {} as unknown as UniverseBuilder,
+      new UniverseFilter(),
+      new JobService(),
+      new FilterStateService(store),
+    );
+  }
+
+  async function tickers(): Promise<string[]> {
+    const view = await service.view();
+    return view.candidates
+      .filter((item) => item.passed)
+      .map((item) => item.ticker)
+      .sort();
+  }
 
   beforeEach(() => {
     current = snapshotOf(population());
     saved = [];
-    const store = {
+    state = { value: null };
+    store = {
       loadSnapshot: jest.fn().mockImplementation(async () => current),
       saveSnapshot: jest.fn().mockImplementation(async (_name: string, value: unknown) => {
         saved.push(value as UniverseSnapshot);
         return '/tmp/universe.json';
       }),
+      loadState: jest.fn().mockImplementation(async () => state.value ?? null),
+      saveState: jest.fn().mockImplementation(async (_name: string, value: unknown) => {
+        state.value = value;
+        return '/tmp/active-filters.json';
+      }),
     } as unknown as StoreService;
-
-    // Ни одного метода: любое обращение к сети из alpha уронит тест.
-    const builder = {} as unknown as UniverseBuilder;
-    service = new UniverseService(store, builder, new UniverseFilter(), new JobService());
+    service = build();
   });
 
-  it('в секторе не больше perSector лидеров, порядок по sectorScore', async () => {
-    const report = await service.alpha();
-    const dexs = report.leaders.filter((item) => item.sector === 'dexs');
+  it('режет только перенасыщенный сектор и добавляет стадию в воронку', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    const before = await service.status();
 
-    expect(dexs).toHaveLength(DEFAULT_PROFILE.alpha.perSector);
-    expect(dexs.map((item) => item.ticker)).toEqual(['DX1', 'DX2', 'DX4', 'DX5', 'DX6']);
-    expect(dexs[0].sectorScore).toBe(100);
-    expect(dexs[0].rankInSector).toBe(1);
-    expect(dexs[0].revenueSharePct).toBe(27.52);
-    expect(dexs[0].peers).not.toContain('DX1');
-    expect(dexs[0].peers).toContain('DX3');
+    const result = await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+
+    expect(before.passed).toBe(11);
+    expect(result.before).toBe(11);
+    // Удалён только DX6 — единственный, кто проиграл сравнение. DX7 несравним,
+    // NOSEC без группы: оба остаются, оба в dataGaps.
+    expect(result.after).toBe(10);
+    expect(result.dropped).toBe(1);
+    expect(result.funnel.stages.at(-1)?.filter).toBe('alpha');
+    expect(result.status.passed).toBe(10);
+    expect(result.status.tiers?.rejected).toBe(2);
+
+    const dexs = result.sectors.find((item) => item.sector === 'dexs');
+    expect(dexs).toMatchObject({ size: 7, saturated: true, kept: 6, dropped: 1, ranked: 6 });
   });
 
-  it('qualify раньше топа: лучший балл без порога лидером не становится', async () => {
-    const report = await service.alpha();
+  it('маленький сектор остаётся целиком, включая сектор из одного', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+    const view = await service.view();
+    const byTicker = new Map(view.candidates.map((item) => [item.ticker, item]));
 
-    expect(report.leaders.some((item) => item.ticker === 'DX3')).toBe(false);
-    // DX3 остаётся конкурентом: перцентили считались вместе с ним.
-    expect(report.leaders[0].sectorSize).toBe(7);
-    expect(report.leaders[0].qualifiedInSector).toBe(6);
+    expect(byTicker.get('DOM')?.passed).toBe(true);
+    expect(byTicker.get('DOM')?.alpha?.decision).toBe('sector_not_saturated');
+    expect(byTicker.get('LN1')?.passed).toBe(true);
+    expect(byTicker.get('LN2')?.passed).toBe(true);
+    expect(view.sectors.find((item) => item.sector === 'domains')?.dropped).toBe(0);
   });
 
-  it('топ не добивается до perSector ради числа', async () => {
-    const report = await service.alpha();
-    const lending = report.leaders.filter((item) => item.sector === 'lending');
+  it('незнание не выдаётся за проигрыш: несравнимый и безгрупповой остаются', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    const result = await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+    const byTicker = new Map((await service.view()).candidates.map((i) => [i.ticker, i]));
 
-    expect(lending.map((item) => item.ticker)).toEqual(['LN1', 'LN2']);
-    expect(lending[0].sectorSize).toBe(4);
+    // Пробел в данных не удаляет токен и не портит его тир.
+    expect(byTicker.get('DX7')?.alpha?.decision).toBe('alpha_unrankable');
+    expect(byTicker.get('DX7')?.passed).toBe(true);
+    expect(byTicker.get('DX7')?.rejectedAt).toBeNull();
+    expect(byTicker.get('NOSEC')?.alpha?.decision).toBe('alpha_missing_sector');
+    expect(byTicker.get('NOSEC')?.passed).toBe(true);
+
+    // Проигрыш сравнения удаляет и называет причину.
+    expect(byTicker.get('DX6')?.alpha?.decision).toBe('alpha_outranked');
+    expect(byTicker.get('DX6')?.passed).toBe(false);
+    expect(byTicker.get('DX6')?.rejectedAt).toBe('alpha_outranked');
+
+    expect(result.dataGapsTotal).toBe(2);
+    const gap = result.dataGaps.find((item) => item.ticker === 'DX7');
+    expect(gap?.availableMetrics).toEqual(['revenue12mUsd']);
+    expect(gap?.missingMetrics).toContain('holderYieldPct');
   });
 
-  it('сектор меньше minSectorSize лидера не выделяет', async () => {
-    const report = await service.alpha();
-    const small = report.sectorsWithoutComparison.filter(
-      (item) => item.reason === 'too_small',
-    );
+  it('работает без screen: вход — весь снимок', async () => {
+    const result = await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
 
-    expect(small.map((item) => item.sector).sort()).toEqual(['domains', 'yield-aggregator']);
-    expect(report.leaders.some((item) => item.sector === 'domains')).toBe(false);
-    expect(small.find((item) => item.sector === 'domains')?.members).toHaveLength(1);
-
-    const unknown = report.sectorsWithoutComparison.find(
-      (item) => item.reason === 'unknown_sector',
-    );
-    expect(unknown?.members.map((item) => item.ticker)).toEqual(['NOSEC']);
+    expect(result.activeFilters.screen.enabled).toBe(false);
+    expect(result.before).toBe(12);
+    expect(result.funnel.stages).toHaveLength(1);
+    // DEAD не отсеян screen, а в маленьком секторе альфа его не трогает.
+    const byTicker = new Map((await service.view()).candidates.map((i) => [i.ticker, i]));
+    expect(byTicker.get('DEAD')?.passed).toBe(true);
   });
 
-  it('«неизвестно» не превращается в ноль и не топит участника', async () => {
-    const report = await service.alpha();
-    const dx6 = report.leaders.find((item) => item.ticker === 'DX6');
-    const yieldPct = dx6?.percentiles.find((item) => item.field === 'holderYieldPct');
+  it('порядок вызовов не меняет результат', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+    const screenFirst = await tickers();
 
-    expect(yieldPct?.value).toBeNull();
-    expect(yieldPct?.percentile).toBeNull();
-    expect(yieldPct?.ranked).toBe(6);
-    // Балл посчитан по трём доступным перцентилям, а не по нулю за неизвестное.
-    expect(dx6?.sectorScore).toBeGreaterThan(0);
+    state.value = null;
+    service = build();
+    await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    const alphaFirst = await tickers();
+
+    expect(alphaFirst).toEqual(screenFirst);
   });
 
-  it('выброс выручки к TVL не получает верхний перцентиль', async () => {
-    const report = await service.alpha();
-    const dx5 = report.leaders.find((item) => item.ticker === 'DX5');
-    const perTvl = dx5?.percentiles.find((item) => item.field === 'revenuePerTvlPct');
+  it('выключение возвращает отсеянных и не трогает соседний фильтр', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    const withoutAlpha = await tickers();
 
-    expect(perTvl?.value).toBe(9_000);
-    expect(perTvl?.percentile).toBeNull();
-    expect(dx5?.rankInSector).toBeGreaterThan(1);
-    expect(report.warnings.some((line) => line.includes('DX5'))).toBe(true);
+    await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+    const off = await service.applyAlphaFilter({ enabled: false });
+
+    expect(await tickers()).toEqual(withoutAlpha);
+    expect(off.activeFilters.screen.enabled).toBe(true);
+    expect(off.activeFilters.alpha.config).not.toBeNull();
+    expect((await service.view()).candidates.every((item) => item.alpha === null)).toBe(true);
   });
 
-  it('тир pool не ранжируется, даже если профиль его просит', async () => {
-    service.setActive(withAlpha({ includeTiers: ['yield', 'economics', 'pool'] }));
-    const report = await service.alpha();
-
-    expect(report.leaders.every((item) => item.tier !== 'pool')).toBe(true);
-    expect(report.warnings.some((line) => line.includes('pool'))).toBe(true);
-  });
-
-  it('needsManualData — крупные токены без экономики, а не всё подряд', async () => {
-    const report = await service.alpha();
-    const tickers = report.needsManualData.map((item) => item.ticker);
-
-    expect(tickers).toEqual(['BIGPOOL']);
-    expect(report.needsManualData[0].reason).toContain('не найден');
-    expect(tickers).not.toContain('SMALLPOOL');
-    expect(report.totals.needsManualData).toBe(1);
-  });
-
-  it('смена perSector меняет выдачу без пересборки и без записи на диск', async () => {
+  it('снимок не мутируется, на диск ложится только состояние', async () => {
     const before = JSON.stringify(current);
 
-    service.setActive(withAlpha({ perSector: 2 }));
-    const report = await service.alpha();
+    await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+    await service.applyAlphaFilter({ enabled: false });
 
-    expect(report.leaders.filter((item) => item.sector === 'dexs')).toHaveLength(2);
-    expect(report.alpha.perSector).toBe(2);
-    expect(report.universeVersion).toBe('2026-08-25');
     expect(JSON.stringify(current)).toBe(before);
     expect(saved).toHaveLength(0);
+  });
+
+  it('разовая конфигурация меняет выдачу, противоречивое тело — 400', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    const narrow = await service.applyAlphaFilter({
+      enabled: true,
+      alpha: { ...DEFAULT_PROFILE.alpha, perSector: 3 },
+    });
+
+    // Три места в топе плюс несравнимый DX7, которого альфа не трогает.
+    const view = await service.view();
+    const top = view.candidates.filter((i) => i.alpha?.decision === 'kept_top_n');
+    expect(top).toHaveLength(3);
+    expect(narrow.sectors.find((item) => item.sector === 'dexs')?.kept).toBe(4);
+    expect(narrow.activeFilters.alpha.profileId).toBeNull();
+
+    await expect(
+      service.applyAlphaFilter({ enabled: false, profileId: 'default' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.applyAlphaFilter({ enabled: true, alpha: { ...DEFAULT_PROFILE.alpha, minScoreMetrics: 9 } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

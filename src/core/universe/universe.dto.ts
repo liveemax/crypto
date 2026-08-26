@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { AnalysisProfileDto } from './profile.dto';
+import { ActiveFilterStateDto } from './filter-state.dto';
+import { AlphaDataGapDto, AlphaSectorSummaryDto, AlphaViewDto } from './alpha.dto';
 
 /** Сохраняет undefined: иначе отсутствующий флаг превращается в явный false. */
 const toBoolean = ({ value }: { value: unknown }): boolean | undefined => {
@@ -77,15 +79,6 @@ export class UniverseQueryDto {
   @Min(0)
   offset?: number;
 
-  @ApiPropertyOptional({
-    description:
-      'Разово посмотреть другим отбором. Рабочий отбор при этом не меняется — ' +
-      'его задаёт POST /universe/screen',
-    enum: ['default', 'yield-hunter', 'deep-value'],
-  })
-  @IsOptional()
-  @IsString()
-  profileId?: string;
 }
 
 export class UniverseCandidateDto {
@@ -118,7 +111,35 @@ export class UniverseCandidateDto {
 
   @ApiProperty({ type: [String], example: ['aave-v3', 'aave-v2'] })
   defillamaSlugs!: string[];
-  @ApiProperty({ nullable: true, example: 'lending' }) sector!: string | null;
+  @ApiProperty({
+    nullable: true,
+    example: 'lending',
+    description: 'Категория DeFiLlama как пришла: способ зарабатывать',
+  })
+  sector!: string | null;
+  @ApiProperty({ type: [String], example: ['layer-1'], description: 'Категории CoinGecko из карты' })
+  rawSectors!: string[];
+  @ApiProperty({
+    nullable: true,
+    example: 'lending',
+    description:
+      'Группа прямых конкурентов, по ней сравнивает альфа. null — пробел покрытия, ' +
+      'а не вердикт о токене',
+  })
+  comparisonGroup!: string | null;
+  @ApiProperty({
+    enum: ['protocol', 'chain', 'exchange', 'infrastructure', 'other'],
+    example: 'protocol',
+  })
+  assetArchetype!: string;
+  @ApiProperty({
+    enum: ['available', 'known_zero', 'mapping_failed', 'source_missing', 'source_stale', 'unsupported_business_model'],
+    example: 'available',
+    description:
+      'known_zero — ноль измерен и подтверждён, это не пробел. ' +
+      'unsupported_business_model — сеть платит валидаторам, а не держателю',
+  })
+  revenueState!: string;
   @ApiProperty({
     enum: ['gecko_id', 'symbol', 'chain', 'override', 'none'],
     description:
@@ -166,11 +187,27 @@ export class UniverseCandidateDto {
 
   @ApiProperty({ enum: ['yield', 'economics', 'pool', 'rejected'] }) tier!: string;
   @ApiProperty({ example: true }) passed!: boolean;
-  @ApiProperty({ nullable: true, example: 'turnover' }) rejectedAt!: string | null;
+  @ApiProperty({
+    nullable: true,
+    example: 'turnover',
+    description: 'Стадия отсева: у screen это правило воронки, у альфы — её решение',
+  })
+  rejectedAt!: string | null;
   @ApiProperty({ nullable: true }) rejectReason!: string | null;
+  @ApiProperty({
+    type: AlphaViewDto,
+    nullable: true,
+    description: 'null — фильтр альфы выключен: сравнения не было, а не «сравнили и никак»',
+  })
+  alpha!: AlphaViewDto | null;
 }
-
 export class FunnelStageDto {
+  @ApiProperty({
+    enum: ['screen', 'alpha'],
+    example: 'screen',
+    description: 'Какой фильтр отсеял: без виновника отсев по данным неотличим от отсева по существу',
+  })
+  filter!: string;
   @ApiProperty({ example: 'turnover' }) stage!: string;
   @ApiProperty({ example: 'Оборот не ниже 0.1% капитализации за сутки' }) label!: string;
   @ApiProperty({ example: 1_150 }) incoming!: number;
@@ -209,10 +246,10 @@ export class FunnelViewDto extends FunnelReportDto {
   universeVersion!: string;
   @ApiProperty({ example: '2026-08-25T11:43:55.725Z' }) builtAt!: string;
   @ApiProperty({
-    example: 'default',
-    description: 'Чей это отбор. Воронка — мнение отбора о снимке, а не свойство снимка',
+    type: ActiveFilterStateDto,
+    description: 'Чья это воронка. Мнение композиции фильтров о снимке, а не свойство снимка',
   })
-  profileId!: string;
+  activeFilters!: ActiveFilterStateDto;
 }
 
 export class UniverseProgressDto {
@@ -246,19 +283,26 @@ export class UniverseStatusDto {
   @ApiProperty({ nullable: true, example: 1_300 }) total!: number | null;
   @ApiProperty({
     nullable: true,
-    example: 'default',
-    description: 'Рабочий отбор, которым посчитаны passed и tiers',
-  })
-  profileId!: string | null;
-  @ApiProperty({
-    nullable: true,
     example: 607,
-    description: 'Прошло рабочий отбор, а не «есть во вселенной»',
+    description:
+      'Прошло все включённые фильтры. Ни один не включён — равно total: ' +
+      'вселенная без фильтров это вся вселенная',
   })
   passed!: number | null;
   @ApiProperty({ type: FunnelTiersDto, nullable: true }) tiers!: FunnelTiersDto | null;
+  @ApiProperty({
+    type: ActiveFilterStateDto,
+    description: 'Чем получены passed и tiers. Композиция независимых фильтров, а не одно имя',
+  })
+  activeFilters!: ActiveFilterStateDto;
+  @ApiProperty({
+    nullable: true,
+    example: 'deep-value',
+    deprecated: true,
+    description: 'Алиас activeFilters.screen.profileId. Источник истины — activeFilters',
+  })
+  profileId!: string | null;
 }
-
 export class RefreshUniverseResponseDto {
   @ApiProperty({ example: true }) started!: boolean;
   @ApiProperty({
@@ -269,13 +313,41 @@ export class RefreshUniverseResponseDto {
   @ApiProperty({ example: 'Пересборка запущена в фоне' }) message!: string;
 }
 
-export class UniverseScreenResponseDto {
-  @ApiProperty({ example: '2026-08-24' }) universeVersion!: string;
-  @ApiProperty({ example: '2026-08-24T17:48:30.000Z' }) builtAt!: string;
-  @ApiProperty({ type: AnalysisProfileDto }) profile!: AnalysisProfileDto;
+export class ScreenApplyResponseDto {
+  @ApiProperty({ example: '2026-08-25' }) universeVersion!: string;
+  @ApiProperty({ example: '2026-08-25T15:36:59.765Z' }) builtAt!: string;
+  @ApiProperty({ type: ActiveFilterStateDto }) activeFilters!: ActiveFilterStateDto;
+  @ApiProperty({ example: 1_300, description: 'Кандидатов на входе фильтра' })
+  before!: number;
+  @ApiProperty({ example: 602, description: 'Кандидатов после него — оно же status.passed' })
+  after!: number;
   @ApiProperty({ type: FunnelReportDto }) funnel!: FunnelReportDto;
-  @ApiProperty({ type: UniverseCandidateDto, isArray: true })
-  candidates!: UniverseCandidateDto[];
+}
+
+export class AlphaApplyResponseDto {
+  @ApiProperty({ example: '2026-08-25' }) universeVersion!: string;
+  @ApiProperty({ example: '2026-08-25T15:36:59.765Z' }) builtAt!: string;
+  @ApiProperty({ type: ActiveFilterStateDto }) activeFilters!: ActiveFilterStateDto;
+  @ApiProperty({
+    example: 602,
+    description: 'Вход альфы: survivors screen, а при выключенном screen — весь снимок',
+  })
+  before!: number;
+  @ApiProperty({ example: 214 }) after!: number;
+  @ApiProperty({ example: 388 }) dropped!: number;
+  @ApiProperty({ type: AlphaSectorSummaryDto, isArray: true })
+  sectors!: AlphaSectorSummaryDto[];
+  @ApiProperty({
+    type: AlphaDataGapDto,
+    isArray: true,
+    description: 'Первые 50 строк очереди; полное число — в dataGapsTotal',
+  })
+  dataGaps!: AlphaDataGapDto[];
+  @ApiProperty({ example: 331 }) dataGapsTotal!: number;
+  @ApiProperty({ type: FunnelReportDto }) funnel!: FunnelReportDto;
+  @ApiProperty({ type: [String] }) warnings!: string[];
+  @ApiProperty({ type: UniverseStatusDto, description: 'Уже пересчитанный статус' })
+  status!: UniverseStatusDto;
 }
 
 export class CandidateRefDto {

@@ -1,215 +1,267 @@
 import { DISCOVERY } from '../../config/discovery';
 import { add, div, mul, pctOf, round } from '../money';
-import { passesRule } from './universe.filter';
-import type { AlphaConfig, AnalysisProfile, NumericField } from './profile.types';
-import type { Tier, UniverseCandidate } from './universe.types';
+import type { AlphaConfig, NumericField } from './profile.types';
+import type { CandidateView, FunnelStage } from './universe.types';
 import type {
-  AlphaReport,
-  ManualDataCandidate,
-  SectorLeader,
-  SectorMember,
+  AlphaDataGap,
+  AlphaDecision,
+  AlphaSectorSummary,
+  AlphaView,
   SectorPercentile,
-  SectorWithoutComparison,
 } from './alpha.types';
+import { groupOf } from './comparison';
 
-/** Тиры без финансовых чисел: ранжировать их не по чему. */
-const UNRANKABLE_TIERS: Tier[] = ['pool', 'rejected'];
-
-/** Сколько имён показывать в предупреждении, чтобы оно осталось читаемым. */
+const MAX_PEERS = 12;
 const WARN_SAMPLE = 12;
 
-export interface AlphaContext {
-  universeVersion: string;
-  builtAt: string;
-  /** Реестры исключений: нужны, если в qualify попало правило kind: 'excluded'. */
-  excluded: Set<string>;
+export interface AlphaOutcome {
+  stage: FunnelStage;
+  sectors: AlphaSectorSummary[];
+  dataGaps: AlphaDataGap[];
+  warnings: string[];
 }
 
 interface ScoredMember {
-  candidate: UniverseCandidate;
+  candidate: CandidateView;
   percentiles: SectorPercentile[];
   revenueSharePct: number | null;
   sectorScore: number | null;
 }
 
-type QualifiedMember = ScoredMember & { sectorScore: number };
+type RankedMember = ScoredMember & { sectorScore: number };
 
 interface MetricColumn {
   values: number[];
   byId: Map<string, number | null>;
 }
 
-interface SectorPlace {
-  sector: string;
-  rankInSector: number;
-  sectorSize: number;
-  qualifiedInSector: number;
-  peers: string[];
-}
-
 /**
- * Выделяет лидеров каждого сектора из состава, прошедшего отбор профиля.
- * Сети не касается, кандидатов не мутирует.
+ * Оставляет в перенасыщенном секторе не больше perSector участников.
+ * Мутирует переданные копии кандидатов; снимок при этом не трогается.
  */
-export function buildAlpha(
-  candidates: UniverseCandidate[],
-  profile: AnalysisProfile,
-  context: AlphaContext,
-): AlphaReport {
-  const alpha = profile.alpha;
-  const warnings: string[] = [];
+export function applyAlpha(
+  candidates: CandidateView[],
+  config: AlphaConfig,
+): AlphaOutcome {
+  const input = candidates.filter((item) => item.passed);
+  const incoming = input.length;
 
-  // Предохранитель против профиля, который просит ранжировать тир без чисел:
-  // молча исполнить такой профиль — значит выдать перцентили по пустоте.
-  const skipped = alpha.includeTiers.filter((tier) => UNRANKABLE_TIERS.includes(tier));
-  if (skipped.length > 0) {
-    warnings.push(
-      `Тиры ${skipped.join(', ')} исключены из ранжирования: финансовых данных нет, ` +
-        'перцентили сектора считать не по чему',
-    );
-  }
-  const rankableTiers = alpha.includeTiers.filter(
-    (tier) => !UNRANKABLE_TIERS.includes(tier),
-  );
-
-  const passed = candidates.filter((item) => item.passed);
-  const ranked = passed.filter((item) => rankableTiers.includes(item.tier));
-
-  const sectors = new Map<string, UniverseCandidate[]>();
-  const unknownSector: UniverseCandidate[] = [];
-  for (const item of ranked) {
-    if (item.sector === null) {
-      unknownSector.push(item);
+  // Группирует comparisonGroup, а не сырая категория: 'chain' на 61 участника —
+  // это архетип, а не ниша, и сравнивать внутри него нечего.
+  const sectors = new Map<string, CandidateView[]>();
+  const withoutSector: CandidateView[] = [];
+  for (const item of input) {
+    const group = groupOf(item);
+    if (group === null) {
+      withoutSector.push(item);
       continue;
     }
-    const bucket = sectors.get(item.sector);
+    const bucket = sectors.get(group);
     if (bucket) bucket.push(item);
-    else sectors.set(item.sector, [item]);
+    else sectors.set(group, [item]);
   }
 
-  const leaders: SectorLeader[] = [];
-  const withoutComparison: SectorWithoutComparison[] = [];
-  const withoutLeaders: string[] = [];
+  const summaries: AlphaSectorSummary[] = [];
+  const dataGaps: AlphaDataGap[] = [];
   const outliers: string[] = [];
-  let sectorsRanked = 0;
+  const unrankable: string[] = [];
+  let dropped = 0;
 
   const ordered = [...sectors.entries()].sort(([left], [right]) =>
     left.localeCompare(right),
   );
 
   for (const [sector, members] of ordered) {
-    if (members.length < alpha.minSectorSize) {
-      withoutComparison.push({
-        sector,
-        reason: 'too_small',
-        size: members.length,
-        members: members.map(toMember),
-        note:
-          `Участников ${members.length} при пороге сравнения ${alpha.minSectorSize}. ` +
-          'Лидер выборки из одного-двух — не лидер, а единственный участник',
-      });
-      continue;
-    }
+    const saturated = members.length > config.perSector;
+    const scored = scoreSector(members, config, outliers);
+    const peers = pickPeers(members);
 
-    sectorsRanked += 1;
-    const scored = scoreSector(members, alpha, outliers);
-
-    // Порядок обязателен: сначала абсолютный порог, потом относительное место.
-    // Иначе «лидер сектора из двух убыточных» становится валидным выводом.
-    const qualified = scored.filter(
-      (row): row is QualifiedMember =>
-        row.sectorScore !== null &&
-        alpha.qualify.every((rule) => passesRule(rule, row.candidate, context.excluded)),
+    const ranked = scored.filter(
+      (row): row is RankedMember => row.sectorScore !== null,
     );
-    if (qualified.length === 0) {
-      withoutLeaders.push(sector);
-      continue;
+    ranked.sort(byScoreDesc);
+    const place = new Map<string, number>();
+    ranked.forEach((row, index) => place.set(row.candidate.coingeckoId, index + 1));
+
+    let kept = 0;
+    for (const row of scored) {
+      const rank = place.get(row.candidate.coingeckoId) ?? null;
+      const decision = decisionOf(saturated, rank, config);
+      const view: AlphaView = {
+        sectorSize: members.length,
+        rankInSector: rank,
+        sectorScore: row.sectorScore,
+        percentiles: row.percentiles,
+        revenueSharePct: row.revenueSharePct,
+        comparisonAvailable: row.sectorScore !== null,
+        decision,
+        decisionReason: reasonOf(decision, sector, members.length, rank, ranked.length, config),
+        peers: peers.filter((ticker) => ticker !== row.candidate.ticker).slice(0, MAX_PEERS),
+      };
+      row.candidate.alpha = view;
+
+      // Удаляется только проигравший конкуренцию. Убрать несравнимого значит
+      // подставить «плохо» вместо «неизвестно» — это запрещено инвариантом.
+      if (decision === 'alpha_outranked') {
+        cut(row.candidate, view);
+        dropped += 1;
+      } else {
+        kept += 1;
+        if (decision === 'alpha_unrankable') {
+          unrankable.push(row.candidate.ticker);
+          dataGaps.push(gapOf(row.candidate, view));
+        }
+      }
     }
 
-    qualified.sort(byScoreDesc);
-    qualified.slice(0, alpha.perSector).forEach((row, index) => {
-      leaders.push(
-        toLeader(row, {
-          sector,
-          rankInSector: index + 1,
-          sectorSize: members.length,
-          qualifiedInSector: qualified.length,
-          peers: members
-            .filter((item) => item.coingeckoId !== row.candidate.coingeckoId)
-            .map((item) => item.ticker)
-            .sort((left, right) => left.localeCompare(right)),
-        }),
-      );
+    summaries.push({
+      sector,
+      size: members.length,
+      saturated,
+      kept,
+      dropped: members.length - kept,
+      ranked: ranked.length,
     });
   }
 
-  if (unknownSector.length > 0) {
-    withoutComparison.push({
+  // Сектор неизвестен — прямых конкурентов назвать нельзя, а общий котёл из всех
+  // «без сектора» сравнил бы биржевой токен с L1. Это пробел данных, а не вердикт.
+  for (const item of withoutSector) {
+    const view: AlphaView = {
+      sectorSize: 0,
+      rankInSector: null,
+      sectorScore: null,
+      percentiles: [],
+      revenueSharePct: null,
+      comparisonAvailable: false,
+      decision: 'alpha_missing_sector',
+      decisionReason:
+        'Группа сравнения не определена: конкурентов назвать нельзя. Токен остаётся ' +
+        'в выборке — незнание группы это пробел данных, а не вердикт о токене',
+      peers: [],
+    };
+    item.alpha = view;
+    dataGaps.push(gapOf(item, view));
+  }
+  if (withoutSector.length > 0) {
+    summaries.push({
       sector: null,
-      reason: 'unknown_sector',
-      size: unknownSector.length,
-      members: unknownSector
-        .map(toMember)
-        .sort((left, right) => left.ticker.localeCompare(right.ticker)),
-      note:
-        'Сектор не определён: протокол не найден или у группы нет категории. ' +
-        'Прямых конкурентов назвать нельзя, поэтому перцентили не считаются',
+      size: withoutSector.length,
+      saturated: false,
+      kept: withoutSector.length,
+      dropped: 0,
+      ranked: 0,
     });
   }
 
-  if (withoutLeaders.length > 0) {
+  const warnings: string[] = [];
+  if (withoutSector.length > 0) {
     warnings.push(
-      `Секторов без лидеров: ${withoutLeaders.length}. Участники есть, абсолютный ` +
-        `порог qualify не прошёл никто: ${sample(withoutLeaders)}`,
+      `Без группы сравнения: ${withoutSector.length}. Оставлены в выборке, ` +
+        'перечислены в dataGaps: это пробел покрытия, а не результат сравнения',
+    );
+  }
+  if (unrankable.length > 0) {
+    warnings.push(
+      `Оставлены без сравнения в перенасыщенной нише: ${unrankable.length}. ` +
+        `Нужно ${config.minScoreMetrics} метрик из ${config.rankBy.length}, ` +
+        `их меньше: ${sample(unrankable)}`,
     );
   }
   if (outliers.length > 0) {
     warnings.push(
       `Выброс revenuePerTvlPct выше ${DISCOVERY.maxRevenuePerTvlPct}%: метрика не ` +
-        'участвует в перцентилях сектора, само число в кандидате не тронуто — ' +
-        `при малом TVL оно бывает настоящим. ${sample(outliers)}`,
+        'участвует в перцентилях, само число не тронуто — при малом TVL оно бывает ' +
+        `настоящим. ${sample(outliers)}`,
     );
   }
 
-  // Рабочая очередь для POST /manual/docs: по этим система слепа.
-  const needsManualData = passed
-    .filter((item) => item.tier === 'pool')
-    .filter((item) =>
-      alpha.manualCandidates.every((rule) => passesRule(rule, item, context.excluded)),
-    )
-    .sort((left, right) => (right.mcapCalcUsd ?? 0) - (left.mcapCalcUsd ?? 0))
-    .map(toManual);
-
   return {
-    universeVersion: context.universeVersion,
-    builtAt: context.builtAt,
-    profileId: profile.id,
-    alpha,
-    totals: {
-      passed: passed.length,
-      ranked: ranked.length,
-      sectors: sectors.size,
-      sectorsRanked,
-      sectorsWithoutComparison: withoutComparison.length,
-      sectorsWithoutLeaders: withoutLeaders.length,
-      leaders: leaders.length,
-      needsManualData: needsManualData.length,
+    stage: {
+      filter: 'alpha',
+      stage: 'alpha_top_n',
+      label: `Не больше ${config.perSector} участников в перенасыщенном секторе`,
+      incoming,
+      dropped,
+      kept: incoming - dropped,
     },
-    leaders,
-    sectorsWithoutComparison: withoutComparison,
-    needsManualData,
+    sectors: summaries,
+    dataGaps,
     warnings,
+  };
+}
+
+function decisionOf(
+  saturated: boolean,
+  rank: number | null,
+  config: AlphaConfig,
+): AlphaDecision {
+  // Ненасыщенный сектор не режется вовсе: единственный участник — свойство рынка,
+  // а не приговор токену.
+  if (!saturated) return 'sector_not_saturated';
+  if (rank === null) return 'alpha_unrankable';
+  return rank <= config.perSector ? 'kept_top_n' : 'alpha_outranked';
+}
+
+function reasonOf(
+  decision: AlphaDecision,
+  sector: string,
+  size: number,
+  rank: number | null,
+  ranked: number,
+  config: AlphaConfig,
+): string {
+  switch (decision) {
+    case 'sector_not_saturated':
+      return `В секторе ${sector} ${size} участников при пороге ${config.perSector}: отбирать не из чего`;
+    case 'kept_top_n':
+      return `Место ${rank} из ${ranked} сравнимых в секторе ${sector}`;
+    case 'alpha_outranked':
+      return `Место ${rank} из ${ranked} в секторе ${sector}: в топ-${config.perSector} не попал`;
+    case 'alpha_unrankable':
+      return (
+        `Остаётся без сравнения: известных метрик меньше ${config.minScoreMetrics} ` +
+        `из ${config.rankBy.length}. Это пробел в данных, а не последнее место`
+      );
+    default:
+      return 'Группа сравнения не определена';
+  }
+}
+
+/** Отсев альфой: причина едет в строку кандидата, а не теряется в сводке. */
+function cut(candidate: CandidateView, view: AlphaView): void {
+  candidate.passed = false;
+  candidate.tier = 'rejected';
+  candidate.rejectedAt = view.decision;
+  candidate.rejectReason = view.decisionReason;
+}
+
+function gapOf(candidate: CandidateView, view: AlphaView): AlphaDataGap {
+  const available = view.percentiles
+    .filter((item) => item.percentile !== null)
+    .map((item) => item.field);
+  const missing = view.percentiles
+    .filter((item) => item.percentile === null)
+    .map((item) => item.field);
+  return {
+    coingeckoId: candidate.coingeckoId,
+    ticker: candidate.ticker,
+    sector: candidate.sector,
+    reason: view.decision === 'alpha_missing_sector' ? 'alpha_missing_sector' : 'alpha_unrankable',
+    availableMetrics: available,
+    missingMetrics: missing,
+    note: view.decisionReason,
   };
 }
 
 /** Считает перцентили внутри сектора: сравнение идёт только с прямыми конкурентами. */
 function scoreSector(
-  members: UniverseCandidate[],
-  alpha: AlphaConfig,
+  members: CandidateView[],
+  config: AlphaConfig,
   outliers: string[],
 ): ScoredMember[] {
   const columns = new Map<NumericField, MetricColumn>();
-  for (const metric of alpha.rankBy) {
+  for (const metric of config.rankBy) {
     if (columns.has(metric.field)) continue;
     const byId = new Map<string, number | null>();
     const values: number[] = [];
@@ -221,14 +273,14 @@ function scoreSector(
     columns.set(metric.field, { values, byId });
   }
 
-  // Знаменатель доли — сумма выручки сектора. Неизвестная выручка не превращается в ноль.
+  // Неизвестная выручка не превращается в ноль и не раздувает чужую долю.
   const revenueTotal = members.reduce(
     (sum, item) => (item.revenue12mUsd === null ? sum : add(sum, item.revenue12mUsd)),
     0,
   );
 
   return members.map((candidate) => {
-    const percentiles = alpha.rankBy.map((metric) => {
+    const percentiles = config.rankBy.map((metric) => {
       const column = columns.get(metric.field);
       const values = column?.values ?? [];
       const usable = column?.byId.get(candidate.coingeckoId) ?? null;
@@ -239,11 +291,12 @@ function scoreSector(
         percentile:
           usable === null
             ? null
-            : percentileOf(usable, values, metric.direction, alpha.minSectorSize),
+            : percentileOf(usable, values, metric.direction, config.minRankedValues),
         ranked: values.length,
       };
     });
 
+    const available = percentiles.filter((item) => item.percentile !== null).length;
     return {
       candidate,
       percentiles,
@@ -251,19 +304,18 @@ function scoreSector(
         revenueTotal > 0 && candidate.revenue12mUsd !== null
           ? round(pctOf(candidate.revenue12mUsd, revenueTotal), 2)
           : null,
-      sectorScore: meanOf(percentiles),
+      sectorScore: available >= config.minScoreMetrics ? meanOf(percentiles) : null,
     };
   });
 }
 
 /**
- * Число, годное для сравнения внутри сектора.
- * Выброс выручки к TVL не обнуляется — при малом TVL он бывает настоящим, — но и
- * верхнего перцентиля не получает: иначе лидерство сектора достаётся склейке
- * чужих комиссий (у Canton вышло 9647%).
+ * Число, годное для сравнения. Выброс выручки к TVL не стирается — при малом TVL
+ * он бывает настоящим, — но верхнего перцентиля не получает: иначе место в нише
+ * достаётся ошибке склейки (у Canton вышло 9647%).
  */
 function metricValue(
-  item: UniverseCandidate,
+  item: CandidateView,
   field: NumericField,
   outliers: string[],
 ): number | null {
@@ -276,11 +328,7 @@ function metricValue(
   return value;
 }
 
-/**
- * Доля конкурентов, которых участник обошёл. Равные делят место пополам, поэтому
- * три одинаковых числа дают 50, а не случайный порядок. Чисел меньше порога
- * сравнения — перцентиля нет: деление двух известных на 0 и 100 не измерение.
- */
+/** Равные делят место пополам: три одинаковых числа дают 50, а не случайный порядок. */
 function percentileOf(
   value: number,
   values: number[],
@@ -292,7 +340,7 @@ function percentileOf(
   if (others <= 0) return null;
 
   let worse = 0;
-  let ties = -1; // сам участник тоже лежит в values
+  let ties = -1;
   for (const other of values) {
     if (other === value) {
       ties += 1;
@@ -304,7 +352,6 @@ function percentileOf(
   return round(pctOf(add(worse, mul(ties, 0.5)), others), 2);
 }
 
-/** Среднее доступных перцентилей; ни одного доступного — балла нет. */
 function meanOf(percentiles: SectorPercentile[]): number | null {
   const available = percentiles
     .map((item) => item.percentile)
@@ -314,83 +361,28 @@ function meanOf(percentiles: SectorPercentile[]): number | null {
   return round(div(total, available.length), 2);
 }
 
-/** Внутри сектора разница в доли балла — шум, поэтому порядок доопределён явно. */
-function byScoreDesc(left: QualifiedMember, right: QualifiedMember): number {
+/** sectorScore DESC, затем выручка DESC с неизвестной в конце, затем тикер ASC. */
+function byScoreDesc(left: RankedMember, right: RankedMember): number {
   const byScore = right.sectorScore - left.sectorScore;
   if (byScore !== 0) return byScore;
-  const byRevenue =
-    (right.candidate.revenue12mUsd ?? 0) - (left.candidate.revenue12mUsd ?? 0);
-  if (byRevenue !== 0) return byRevenue;
+  const leftRevenue = left.candidate.revenue12mUsd;
+  const rightRevenue = right.candidate.revenue12mUsd;
+  if (leftRevenue !== rightRevenue) {
+    if (leftRevenue === null) return 1;
+    if (rightRevenue === null) return -1;
+    return rightRevenue - leftRevenue;
+  }
   return left.candidate.ticker.localeCompare(right.candidate.ticker);
 }
 
-function toLeader(row: QualifiedMember, place: SectorPlace): SectorLeader {
-  const item = row.candidate;
-  return {
-    coingeckoId: item.coingeckoId,
-    ticker: item.ticker,
-    name: item.name,
-    tier: item.tier,
-    sector: place.sector,
-    rankInSector: place.rankInSector,
-    sectorSize: place.sectorSize,
-    qualifiedInSector: place.qualifiedInSector,
-    sectorScore: row.sectorScore,
-    percentiles: row.percentiles,
-    revenueSharePct: row.revenueSharePct,
-    mcapCalcUsd: item.mcapCalcUsd,
-    revenue12mUsd: item.revenue12mUsd,
-    holdersRevenue12mUsd: item.holdersRevenue12mUsd,
-    holderYieldPct: item.holderYieldPct,
-    pRev: item.pRev,
-    revenueSource: item.revenueSource,
-    marketAsOf: item.marketAsOf,
-    peers: place.peers,
-  };
-}
-
-function toMember(item: UniverseCandidate): SectorMember {
-  return {
-    coingeckoId: item.coingeckoId,
-    ticker: item.ticker,
-    name: item.name,
-    tier: item.tier,
-  };
-}
-
-function toManual(item: UniverseCandidate): ManualDataCandidate {
-  return {
-    ...toMember(item),
-    sector: item.sector,
-    mcapCalcUsd: item.mcapCalcUsd,
-    vol24hUsd: item.vol24hUsd,
-    matchedBy: item.matchedBy,
-    defillamaSlugs: item.defillamaSlugs,
-    reason: manualReason(item),
-  };
-}
-
-/** Чего именно не хватает: слага, выручки или объяснения нулю. */
-function manualReason(item: UniverseCandidate): string {
-  if (item.matchedBy === 'none') {
-    return 'Протокол DeFiLlama не найден ни по gecko_id, ни по тикеру группы: ' +
-      'нужен другой источник или документация проекта';
-  }
-  if (item.revenue12mUsd === null) {
-    return (
-      `Протокол найден (${item.defillamaSlugs.join(', ') || '—'}), но выручки за ` +
-      '12 месяцев в сводках комиссий нет'
-    );
-  }
-  return (
-    `Выручка по источнику ${item.revenue12mUsd} USD: сравнивать по экономике нечего, ` +
-    'нужна документация проекта'
-  );
+function pickPeers(members: CandidateView[]): string[] {
+  return members
+    .map((item) => item.ticker)
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, MAX_PEERS + 1);
 }
 
 function sample(items: string[]): string {
   const head = items.slice(0, WARN_SAMPLE).join(', ');
-  return items.length > WARN_SAMPLE
-    ? `${head} и ещё ${items.length - WARN_SAMPLE}`
-    : head;
+  return items.length > WARN_SAMPLE ? `${head} и ещё ${items.length - WARN_SAMPLE}` : head;
 }

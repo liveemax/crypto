@@ -1,4 +1,5 @@
 import { JobService } from '../src/core/jobs/job.service';
+import { FilterStateService } from '../src/core/universe/filter-state.service';
 import { StoreService } from '../src/core/store/store.service';
 import { UniverseBuilder } from '../src/core/universe/universe.builder';
 import { UniverseFilter } from '../src/core/universe/universe.filter';
@@ -26,6 +27,10 @@ function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidat
     fdvToMcap: 1.04,
     defillamaSlugs: ['aave-v3'],
     sector: 'lending',
+    rawSectors: [],
+    comparisonGroup: 'lending',
+    assetArchetype: 'protocol',
+    revenueState: 'available',
     matchedBy: 'gecko_id',
     tvlUsd: 17_000_000_000,
     tvlSource: 'https://defillama.com/protocol/aave-v3',
@@ -133,17 +138,22 @@ describe('Приёмка шага 05: профиль отбора', () => {
       }),
     } as unknown as StoreService;
 
-    // Ни одного метода: любое обращение к сети из screen уронит тест.
     builder = {} as unknown as UniverseBuilder;
-    service = new UniverseService(store, builder, new UniverseFilter(), new JobService());
+    service = new UniverseService(
+      store,
+      builder,
+      new UniverseFilter(),
+      new JobService(),
+      new FilterStateService(store),
+    );
   });
 
   it('default воспроизводит воронку, записанную при сборке', async () => {
     const result = await service.screen({ profileId: 'default' });
 
     expect(result.profile.id).toBe('default');
-    expect(result.funnel.passed).toBe(current.funnel.passed);
-    expect(result.funnel.tiers).toEqual(current.funnel.tiers);
+    expect(result.funnel.passed).toBe(current.funnel?.passed);
+    expect(result.funnel.tiers).toEqual(current.funnel?.tiers);
   });
 
   it('разные профили дают разный отбор на одном снимке', async () => {

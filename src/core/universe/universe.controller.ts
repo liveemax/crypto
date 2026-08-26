@@ -7,14 +7,18 @@ import {
   RefreshUniverseResponseDto,
   UniverseCandidateDto,
   UniverseQueryDto,
-  UniverseScreenResponseDto,
+  ScreenApplyResponseDto,
   UniverseStatusDto,
   FunnelViewDto,
 } from './universe.dto';
-import { UniverseAlphaResponseDto } from './alpha.dto';
-import { CompareUniverseDto, ProfileSelectionDto } from './profile.dto';
+import { ScreenSelectionDto } from './filter-state.dto';
+import { AlphaSelectionDto } from './alpha.dto';
+import { CoverageReportDto } from './coverage.dto';
+import { AlphaApplyResponseDto } from './universe.dto';
+import { CompareUniverseDto } from './profile.dto';
 import { UniverseService } from './universe.service';
-import { ProfileReference, ProfileSelection, UniverseCandidate } from './universe.types';
+import { ProfileReference, UniverseCandidate } from './universe.types';
+import type { AlphaSelectionRequest, ScreenSelectionRequest } from './filter-state.types';
 
 type SortKey = 'rank' | 'holderYieldPct' | 'revenue12mUsd' | 'pRev';
 
@@ -63,68 +67,95 @@ export class UniverseController {
 
   @Post('screen')
   @ApiOperation({
-    summary: 'ШАГ 3. Отобрать интересное — мгновенно, без интернета',
+    summary: 'ШАГ 3. Фильтр шлака: включить или выключить',
     description:
-      'Прогоняет уже собранную вселенную через фильтры выбранного профиля и отдаёт ' +
-      'воронку отсева и тиры. В сеть не ходит, снимок не меняет, работает мгновенно — ' +
-      'меняйте профиль сколько угодно раз, это бесплатно.\n\n' +
-      'ВЫБРАННЫЙ ОТБОР СТАНОВИТСЯ РАБОЧИМ. После этого GET /universe/status, ' +
-      'GET /universe/funnel и GET /universe показывают его, а не базовый. ' +
-      'Разово посмотреть другой, не меняя рабочий, — параметр profileId в этих трёх.\n\n' +
-      'Передавайте ЛИБО profileId готового профиля, ЛИБО полный profile для разового ' +
-      'эксперимента. Оба сразу — ошибка. Пустое тело равно profileId=default.\n\n' +
-      'Готовые профили и их гипотезы — в GET /config/profiles.\n\n' +
-      'Читать в ответе надо tiers, а не passed: yield — выручка доходит до держателя, ' +
-      'economics — выручка есть, до держателя не доходит, pool — данных нет, ' +
-      'rejected — отсеян шлак-фильтром.',
+      'Обратимый фильтр поверх неизменной вселенной. В сеть не ходит, снимок не ' +
+      'меняет, работает мгновенно — включайте и выключайте сколько угодно раз.\n\n' +
+      'enabled: true включает фильтр, enabled: false выключает и возвращает ровно тот ' +
+      'состав, что был без него. Конфигурация при выключении не стирается: включить ' +
+      'обратно тем же профилем можно телом {"enabled": true}.\n\n' +
+      'При включении передавайте ЛИБО profileId готового профиля, ЛИБО полный profile ' +
+      'для разового эксперимента. Оба сразу — ошибка, профиль при enabled: false — тоже.\n\n' +
+      'После вызова GET /universe/status, GET /universe/funnel и GET /universe ' +
+      'показывают результат всех включённых фильтров. Отдельного «разового взгляда» ' +
+      'больше нет: два ответа с разными числами по одному снимку — это баг, а не фича. ' +
+      'Сравнить два профиля, не трогая рабочее состояние, — POST /universe/compare.\n\n' +
+      'Готовые профили и их гипотезы — в GET /config/profiles.',
   })
   @ApiBody({
-    type: ProfileSelectionDto,
-    required: false,
+    type: ScreenSelectionDto,
+    required: true,
     examples: {
-      default: {
-        summary: 'default — базовый шлак-фильтр, то же что при сборке',
-        value: { profileId: 'default' },
+      deepValue: {
+        summary: 'Включить deep-value — плачу за дешевизну к выручке',
+        value: { enabled: true, profileId: 'deep-value' },
       },
       yieldHunter: {
-        summary: 'yield-hunter — плачу за доходность держателя',
-        value: { profileId: 'yield-hunter' },
+        summary: 'Включить yield-hunter — плачу за доходность держателя',
+        value: { enabled: true, profileId: 'yield-hunter' },
       },
-      deepValue: {
-        summary: 'deep-value — плачу за дешевизну к выручке',
-        value: { profileId: 'deep-value' },
+      again: {
+        summary: 'Включить обратно с прежней конфигурацией',
+        value: { enabled: true },
+      },
+      off: {
+        summary: 'Выключить: вернуться к вселенной без фильтра шлака',
+        value: { enabled: false },
       },
     },
   })
-  @ApiQuery({
-    name: 'includeCandidates',
-    required: false,
-    type: Boolean,
+  @ApiOkResponse({ type: ScreenApplyResponseDto })
+  async screen(@Body() body: ScreenSelectionDto): Promise<ScreenApplyResponseDto> {
+    return this.universe.applyScreen(body as unknown as ScreenSelectionRequest);
+  }
+
+  @Post('alpha')
+  @ApiOperation({
+    summary: 'ШАГ 4. Лидеры ниш: включить или выключить',
     description:
-      'Вернуть сами монеты. По умолчанию false: 1300 строк — это мегабайты JSON, ' +
-      'на которых виснет страница Swagger, а не сервер. Смотрите funnel и tiers, ' +
-      'полный список — в GET /universe',
+      'Второй обратимый фильтр. Режет ТОЛЬКО перенасыщенные секторы: если ' +
+      'участников больше perSector, остаётся top-N по перцентилям внутри сектора. ' +
+      'Сектор меньше или равный perSector остаётся целиком — единственный участник ' +
+      'ниши это свойство рынка, а не приговор токену.\n\n' +
+      'Абсолютных порогов здесь нет намеренно. «Выручка не ниже миллиона» — это ' +
+      'screen; альфа отвечает на один вопрос: кто в топе своей ниши.\n\n' +
+      'Применяется поверх screen, а если screen выключен — поверх всего снимка. ' +
+      'Порядок вызовов не важен: считается всегда snapshot → screen → alpha.\n\n' +
+      'Читайте decision у каждого отсеянного и sectors в ответе. Отсев по ' +
+      'конкуренции (alpha_outranked) и отсев по дырам в данных (alpha_unrankable, ' +
+      'alpha_missing_sector) — разные вещи: второе едет в dataGaps и означает, что ' +
+      'система про токен ничего не знает, а не что он хуже конкурентов.\n\n' +
+      'enabled: false немедленно возвращает всех отсеянных альфой; screen при этом ' +
+      'не выключается. В сеть не ходит, снимок не меняет.',
   })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Сколько монет вернуть при includeCandidates=true. По умолчанию 50, максимум 500',
+  @ApiBody({
+    type: AlphaSelectionDto,
+    required: true,
+    examples: {
+      on: { summary: 'Включить с конфигурацией профиля default', value: { enabled: true, profileId: 'default' } },
+      narrow: {
+        summary: 'Разовая конфигурация: по три на нишу',
+        value: {
+          enabled: true,
+          alpha: {
+            perSector: 3,
+            minRankedValues: 3,
+            minScoreMetrics: 2,
+            rankBy: [
+              { field: 'holderYieldPct', direction: 'higher_better' },
+              { field: 'revenue12mUsd', direction: 'higher_better' },
+              { field: 'revenuePerTvlPct', direction: 'higher_better' },
+              { field: 'pRev', direction: 'lower_better' },
+            ],
+          },
+        },
+      },
+      off: { summary: 'Выключить и вернуть отсеянных', value: { enabled: false } },
+    },
   })
-  @ApiOkResponse({ type: UniverseScreenResponseDto })
-  async screen(
-    @Body() body: ProfileSelectionDto = {},
-    @Query('includeCandidates') includeCandidates?: string,
-    @Query('limit') limit?: string,
-  ): Promise<UniverseScreenResponseDto> {
-    const result = await this.universe.screen(body as unknown as ProfileSelection);
-    // Выбранный отбор становится рабочим: GET /universe/status, /universe/funnel
-    // и /universe начинают показывать его, а не базовый.
-    this.universe.setActive(result.profile);
-    if (includeCandidates !== 'true') return { ...result, candidates: [] };
-    const size = Number(limit);
-    const take = Number.isFinite(size) && size > 0 ? Math.min(size, 500) : 50;
-    return { ...result, candidates: result.candidates.slice(0, take) };
+  @ApiOkResponse({ type: AlphaApplyResponseDto })
+  async alpha(@Body() body: AlphaSelectionDto): Promise<AlphaApplyResponseDto> {
+    return this.universe.applyAlphaFilter(body as unknown as AlphaSelectionRequest);
   }
 
   @Post('compare')  
@@ -150,90 +181,59 @@ export class UniverseController {
 
   @Get('status')
   @ApiOperation({
-    summary: 'Что сейчас происходит и сколько прошло рабочий отбор',
+    summary: 'Что сейчас происходит и что осталось после всех фильтров',
     description:
       'state: idle — работы нет, running — идёт сборка или обновление чисел, ' +
       'error — упало, причина в поле error. Проценты и остаток времени — в progress.\n\n' +
-      'passed и tiers считаются рабочим отбором, его имя — в profileId. ' +
-      'Рабочий отбор задаётся последним POST /universe/screen.',
+      'passed и tiers считаются композицией включённых фильтров, она целиком в ' +
+      'activeFilters. Ни один не включён — passed равно total.\n\n' +
+      'activeFilters переживает перезапуск сервиса: состояние лежит в data/, а не ' +
+      'в памяти процесса.',
   })
   @ApiOkResponse({ type: UniverseStatusDto })
   async status(): Promise<UniverseStatusDto> {
-    const base = await this.universe.status();
-    const active = await this.universe.activeSummary();
-    return active ? { ...base, ...active } : { ...base, profileId: null };
+    return this.universe.status();
+  }
+
+  @Get('coverage')
+  @ApiOperation({
+    summary: 'Насколько система вообще способна сравнивать',
+    description:
+      'Доля участников без группы сравнения — по числу монет И по капитализации. ' +
+      'Оба порога обязательны: десять процентов монет бывают половиной денег.\n\n' +
+      'Считается на ВХОДЕ альфы, при выключенной альфе. Иначе фильтр улучшал бы ' +
+      'собственную метрику, удаляя тех, кого не покрыли.\n\n' +
+      'revenue.byState разделяет пробелы по типу: known_zero — ноль измерен и ' +
+      'подтверждён, это не пробел; mapping_failed — монета не склеена с протоколом; ' +
+      'unsupported_business_model — сеть платит валидаторам, а не держателю, ей ' +
+      'нужны свои метрики. Разные состояния чинятся по-разному.\n\n' +
+      'В сеть не ходит. Порог двигается только вниз.',
+  })
+  @ApiOkResponse({ type: CoverageReportDto })
+  async coverage(): Promise<CoverageReportDto> {
+    return this.universe.coverage();
   }
 
   @Get('funnel')
   @ApiOperation({
-    summary: 'Воронка рабочего отбора: где именно отсеялись монеты',
+    summary: 'Воронка включённых фильтров: где именно отсеялись монеты',
     description:
-      'На каждой проверке: сколько вошло, сколько отсеяно, сколько осталось. ' +
-      'Проверки идут по очереди, поэтому отсеянный на третьей до четвёртой не доходит — ' +
-      'число напротив проверки зависит от того, кто стоял раньше.\n\n' +
-      'Считается рабочим отбором, который задал последний POST /universe/screen. ' +
-      'Разово посмотреть другой — параметр profileId; рабочий при этом не меняется.\n\n' +
-      'universeVersion, builtAt и profileId в ответе отвечают на вопрос «откуда эти ' +
-      'числа»: воронка это мнение конкретного отбора о конкретном снимке.',
+      'На каждой проверке: сколько вошло, сколько отсеяно, сколько осталось, и какой ' +
+      'фильтр её выполнял. Проверки идут по очереди, поэтому отсеянный на третьей до ' +
+      'четвёртой не доходит — число напротив проверки зависит от того, кто стоял раньше.\n\n' +
+      'Ни один фильтр не включён — стадий нет, и это не ошибка: отсева не было.\n\n' +
+      'universeVersion, builtAt и activeFilters отвечают на вопрос «откуда эти числа»: ' +
+      'воронка это мнение конкретной композиции фильтров о конкретном снимке.',
   })
-  @ApiQuery({ name: 'profileId', required: false, type: String })
   @ApiOkResponse({ type: FunnelViewDto })
-  async funnel(@Query('profileId') profileId?: string): Promise<FunnelViewDto> {
-    const snapshot = await this.universe.latest();
-    if (!snapshot) {
-      throw new NotFoundException(
-        'Вселенная ещё не собрана. Вызовите POST /universe/refresh',
-      );
-    }
-    const view = await this.universe.view(profileId);
+  async funnel(): Promise<FunnelViewDto> {
+    const view = await this.universe.view();
     return {
       universeVersion: view.universeVersion,
       builtAt: view.builtAt,
-      profileId: view.profile.id,
+      activeFilters: view.activeFilters,
       ...view.funnel,
     };
-  }
-
-  @Get('alpha')
-  @ApiOperation({
-    summary: 'ШАГ 4. Лидеры секторов — мгновенно, без интернета',
-    description:
-      'Сравнивает каждый проект с прямыми конкурентами, а не со всем рынком: внутри ' +
-      'сектора считаются перцентили по метрикам профиля, среднее даёт sectorScore.\n\n' +
-      'Лидер — тот, кто СНАЧАЛА прошёл абсолютный порог alpha.qualify и ТОЛЬКО ПОТОМ ' +
-      'попал в топ alpha.perSector. Топ-5 не добивается ради числа: лидер сектора ' +
-      'из двух убыточных — не вывод.\n\n' +
-      'Три списка, а не один. leaders — альфа. sectorsWithoutComparison — секторы, ' +
-      'где сравнивать не с кем: там честно нет лидера, а не назначен единственный ' +
-      'участник. needsManualData — крупные и ликвидные токены без финансовых данных: ' +
-      'это рабочая очередь на ручной сбор, а не отбросы.\n\n' +
-      'В сеть не ходит, снимок не меняет. Без profileId считает рабочим отбором, ' +
-      'который задал последний POST /universe/screen — так меняются perSector и ' +
-      'minSectorSize без пересборки вселенной.',
-  })
-  @ApiQuery({
-    name: 'profileId',
-    required: false,
-    type: String,
-    description: 'Разово посмотреть другим отбором. Рабочий отбор при этом не меняется',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description:
-      'Сколько строк вернуть в needsManualData. По умолчанию 50, максимум 500. ' +
-      'Полное число — в totals.needsManualData',
-  })
-  @ApiOkResponse({ type: UniverseAlphaResponseDto })
-  async alpha(
-    @Query('profileId') profileId?: string,
-    @Query('limit') limit?: string,
-  ): Promise<UniverseAlphaResponseDto> {
-    const report = await this.universe.alpha(profileId);
-    const size = Number(limit);
-    const take = Number.isFinite(size) && size > 0 ? Math.min(size, 500) : 50;
-    return { ...report, needsManualData: report.needsManualData.slice(0, take) };
   }
 
   @Get()
@@ -242,8 +242,9 @@ export class UniverseController {
     description:
       'Каждая строка — посчитанные кодом числа со ссылкой на источник и временем ' +
       'обновления источника. По умолчанию только прошедшие рабочий отбор; ' +
-      'passedOnly=false покажет и отсеянных с полем rejectReason — почему именно.\n\n' +
-      'Тиры и причины считаются рабочим отбором. Разово другой — параметр profileId.\n\n' +
+      'passedOnly=false покажет и отсеянных с полем rejectReason — почему именно.\n\n' +    
+      'Тиры и причины считаются композицией включённых фильтров, её состав — ' +
+      'в GET /universe/status.\n\n' +
       'Отдаётся страницами: limit по умолчанию 100, максимум 2000. Полный список — ' +
       'это мегабайты JSON, на которых виснет страница Swagger.',
   })
@@ -257,8 +258,8 @@ export class UniverseController {
     }
     const passedOnly = query.passedOnly ?? true;
     const sector = query.sector?.trim().toLowerCase();
-    const sort = (query.sort ?? 'rank') as SortKey;
-    const view = await this.universe.view(query.profileId);
+    const sort = (query.sort ?? 'rank') as SortKey;    
+    const view = await this.universe.view();
 
     return view.candidates
       .filter((item) => (passedOnly ? item.passed : true))

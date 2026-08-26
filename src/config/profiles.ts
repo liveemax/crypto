@@ -172,6 +172,8 @@ export const DEEP_VALUE_PROFILE: AnalysisProfile = {
   rationale:
     'Проверяет гипотезу, что интересны недорогие относительно выручки токены ' +
     'с достаточным take rate и уже выпущенной частью эмиссии.',
+  // Screener использует тот же предел, что и явно видимое правило профиля ниже.
+  thresholds: { ...THRESHOLDS, maxPRev: 15 },
   screen: [
     ...BASE_SCREEN.map((screenRule) =>
       screenRule.stage === 'float_sane'

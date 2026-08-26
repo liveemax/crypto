@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AgentsModule } from './agents/agents.module';
 import { AppConfigModule } from './config/config.module';
 import { FetchModule } from './core/fetch/fetch.module';
 import { UniverseModule } from './core/universe/universe.module';
@@ -14,6 +15,7 @@ import { JobsModule } from './core/jobs/jobs.module';
     AppConfigModule,
     UniverseModule,
     FetchModule,
+    AgentsModule,
     JobsModule
   ],
   controllers: [HealthController],

@@ -17,6 +17,8 @@ import {
 } from '../fetch/defillama.service';
 import { add, div, mul, round, sub } from '../money';
 import { BuildProgressEvent, UniverseCandidate } from './universe.types';
+import { overhangPctOf } from '../tokenomics/tokenomics.calc';
+import { EMPTY_TOKENOMICS } from '../tokenomics/tokenomics.constants';
 
 interface ProtocolGroup {
   slugs: string[];
@@ -498,6 +500,9 @@ function refreshCandidate(
     turnoverPct: pct(vol24hUsd, mcapCalcUsd),
     floatPct: pct(circulating, totalSupply),
     fdvToMcap: ratio(fdvUsd, mcapCalcUsd),
+    // Эмиссия изменилась — навес пересчитывается; календарные поля пересчитает
+    // applyTokenomics, у которого есть файл фактов.
+    overhangPct: overhangPctOf(circulating, totalSupply),
     marketSource: market?.sourceUrl ?? null,
     marketAsOf: market?.asOf ?? null,
     fees12mUsd,
@@ -774,6 +779,10 @@ function toCandidate(
     pFees: ratio(mcapCalcUsd, fees12mUsd),
     fdvRev: ratio(row.fdvUsd, revenue12mUsd),
     revenuePerTvlPct: tvlYield(revenue12mUsd, group?.tvlUsd ?? null, row.ticker, warnings),
+    // Разлоки заполняет POST /universe/tokenomics; навес известен уже сейчас,
+    // он считается из снимка и чужих адаптеров не требует.
+    ...EMPTY_TOKENOMICS,
+    overhangPct: overhangPctOf(row.circulating, row.totalSupply),
     // Заполняется вторым проходом: карта категорий грузится один раз на сборку,
     // а не по монете.
     rawSectors: [],

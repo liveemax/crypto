@@ -2,9 +2,11 @@ import { CoingeckoService } from '../src/core/fetch/coingecko.service';
 import { DefillamaService, FeeDataType } from '../src/core/fetch/defillama.service';
 import { UniverseBuilder } from '../src/core/universe/universe.builder';
 import { UniverseCandidate } from '../src/core/universe/universe.types';
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 
 function candidate(): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     rank: 1,
     coingeckoId: 'aave',
     ticker: 'AAVE',

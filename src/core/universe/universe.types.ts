@@ -2,6 +2,7 @@ import type { AnalysisProfile } from './profile.types';
 import type { ActiveFilterState, FilterName } from './filter-state.types';
 import type { AlphaDataGap, AlphaSectorSummary, AlphaView } from './alpha.types';
 import type { AssetArchetype, DataState } from './comparison.types';
+import type { TokenomicsFields } from '../tokenomics/tokenomics.types';
 
 export type RevenueBasis = 'reported_1y' | 'run_rate_30d' | 'none';
 export type MatchSource = 'gecko_id' | 'chain' | 'override' | 'none';
@@ -15,8 +16,12 @@ export type MatchSource = 'gecko_id' | 'chain' | 'override' | 'none';
  */
 export type Tier = 'yield' | 'economics' | 'pool' | 'rejected';
 
-/** Кандидат вселенной: все числа посчитаны кодом и снабжены ссылкой на источник. */
-export interface UniverseCandidate {
+/**
+ * Кандидат вселенной: все числа посчитаны кодом и снабжены ссылкой на источник.
+ * Разлоки приходят из TokenomicsFields: это такой же внешний факт, как выручка,
+ * и живёт он там же, а не в оценке, которой иначе пришлось бы ходить в сеть.
+ */
+export interface UniverseCandidate extends TokenomicsFields {
   rank: number;
   coingeckoId: string;
   ticker: string;
@@ -115,6 +120,7 @@ export type UniverseStep =
   | 'chains'
   | 'fees'
   | 'prices'
+  | 'tokenomics'
   | 'join'  
   | 'filter'
   | 'save'

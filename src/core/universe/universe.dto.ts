@@ -86,6 +86,75 @@ export class UniverseCandidateDto {
   @ApiProperty({ example: 'aave' }) coingeckoId!: string;
   @ApiProperty({ example: 'AAVE' }) ticker!: string;
   @ApiProperty({ example: 'Aave' }) name!: string;
+
+  // Разлоки. Пример согласован с одной монетой: circulating 5 млрд,
+  // доходность держателя 0.5%, суточный объём 123 млн.
+  @ApiProperty({
+    nullable: true,
+    example: 118.6,
+    description: 'Навес: (totalSupply − circulating) / circulating. Сколько может выйти, но не когда',
+  })
+  overhangPct!: number | null;
+  @ApiProperty({ nullable: true, example: 37, description: 'Событий и потоков впереди' })
+  unlockEventsCount!: number | null;
+  @ApiProperty({ nullable: true, example: 92_650_000 }) unlockTokens30d!: number | null;
+  @ApiProperty({ nullable: true, example: 277_950_000 }) unlockTokens90d!: number | null;
+  @ApiProperty({ nullable: true, example: 1_112_000_000 }) unlockTokens365d!: number | null;
+  @ApiProperty({ nullable: true, example: 1.85 }) unlock30dPct!: number | null;
+  @ApiProperty({ nullable: true, example: 5.56 }) unlock90dPct!: number | null;
+  @ApiProperty({ nullable: true, example: 22.24 }) unlock12mPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    example: -21.74,
+    description:
+      'Доходность держателя минус разводнение за 12 месяцев. null — известна ' +
+      'только одна половина: разность из одной половины это не оценка',
+  })
+  netHolderYieldPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    example: '2026-09-16T00:00:00.000Z',
+    description: 'Ближайший клифф. Линейный поток дискретного события не имеет',
+  })
+  nextUnlockAt!: string | null;
+  @ApiProperty({ nullable: true, example: 41_800_000 }) nextUnlockUsd!: number | null;
+  @ApiProperty({
+    nullable: true,
+    example: 0.34,
+    description: 'Разлок на 3 дневных объёма и на 30 — принципиально разные события',
+  })
+  nextUnlockCostInDailyVolumes!: number | null;
+  @ApiProperty({
+    nullable: true,
+    example: 0,
+    description: 'Доля эмиссии без расписания. Выше 5% число не принимается',
+  })
+  tokenomicsTbdPct!: number | null;
+  @ApiProperty({
+    enum: [
+      'available',
+      'known_zero',
+      'mapping_failed',
+      'source_missing',
+      'source_stale',
+      'source_error',
+      'matched_unparsed',
+    ],
+    example: 'available',
+    description:
+      'known_zero — ноль измерен полным расписанием; source_missing — источник ' +
+      'токен не знает; matched_unparsed — документ есть, но число из него не ' +
+      'берётся. Ни одно из этих состояний не равно нулю разлоков',
+  })
+  tokenomicsState!: string;
+  @ApiProperty({ nullable: true, example: 'https://defillama.com/unlocks/arbitrum' })
+  tokenomicsSource!: string | null;
+  @ApiProperty({
+    nullable: true,
+    example: '2026-08-26T04:12:07.000Z',
+    description: 'Время источника (last-modified датасета), а не время нашего запроса',
+  })
+  asOfTokenomics!: string | null;
   @ApiProperty({ nullable: true }) priceUsd!: number | null;
   @ApiProperty({ nullable: true }) circulating!: number | null;
   @ApiProperty({ nullable: true }) totalSupply!: number | null;

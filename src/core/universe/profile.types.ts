@@ -17,6 +17,11 @@ export const NUMERIC_FIELDS = [
   'pFees',
   'revenuePerTvlPct',
   'tvlUsd',
+  // Ранжировать по одному навесу нельзя: токен с навесом 100% и последним
+  // разлоком в 2031 году безопаснее токена с навесом 30% и клиффом через месяц.
+  'overhangPct',
+  'unlock12mPct',
+  'netHolderYieldPct',
 ] as const;
 
 export type NumericField = (typeof NUMERIC_FIELDS)[number];

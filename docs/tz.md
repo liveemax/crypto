@@ -362,7 +362,7 @@ Swagger сегодня — временный клиент. Всё, что зд�
 | GET | `/ranking/report/{runId}` | markdown-отчёт | 16 |
 | POST | `/ranking/sensitivity` | устойчивость к весам, без сети | 16 |
 | POST · GET · DELETE | `/manual/unlocks` | необязательный ручной календарь | 09 |
-| POST · GET | `/manual/overrides/{token}` | необязательные уточнения с источником | 09 |
+| POST · GET | `/manual/overrides/{token}` | необязательные уточнения с источником | 13 |
 | POST · GET | `/manual/docs/{token}` | необязательный override документации | 13 |
 
 Удаляются: `GET /config/universe`, `GET /config/sectors`, публичные
@@ -398,6 +398,8 @@ Swagger сегодня — временный клиент. Всё, что зд�
   tokenomicsState: TokenomicsDataState;
   tokenomicsSource: string | null;
   asOfTokenomics: string | null;
+  // Набор объявлен один раз, в TokenomicsFields (src/core/tokenomics), и
+  // подмешивается через extends: два списка одних и тех же полей разъезжаются.
 ```
 
 **2. `NumericField` расширяется** полями `overhangPct`, `unlock12mPct` и
@@ -618,6 +620,23 @@ export interface UnlockEvent {
   asOf: string;
 }
 
+/**
+ * Линейный поток. Добавлен на шаге 09: источник даёт ставку в неделю до
+ * endTimestamp, а не количество, и втиснутый в UnlockEvent он либо
+ * складывается с клиффом как однородное событие, либо разворачивается в
+ * придуманные даты. Ставка ноль — терминатор потока, а не пустое событие.
+ */
+export interface UnlockStream {
+  recipient: string;
+  category: UnlockEvent['category'];
+  startsAt: string;
+  endsAt: string;
+  tokensPerWeek: number;
+  origin: 'provider' | 'manual';
+  sourceUrl: string;
+  asOf: string;
+}
+
 export interface TokenomicsFacts {
   coingeckoId: string;
   ticker: string;
@@ -625,7 +644,10 @@ export interface TokenomicsFacts {
   providerId: string | null;
   matchedBy: 'coingecko_id' | 'contract' | 'provider_id' | 'symbol' | 'none';
   state: TokenomicsDataState;
+  /** Только будущие клиффы: прошлое уже сидит в circulating. */
   events: UnlockEvent[];
+  /** Потоки получателя группой, включая уже истёкшие терминаторы. */
+  streams: UnlockStream[];
   /** Доля эмиссии без расписания. Выше 5% — число не принимается. */
   tbdPct: number | null;
   /** Расписание покрывает столько процентов maxSupply. */
@@ -686,13 +708,16 @@ nextUnlockCostInDailyVolumes = nextUnlockUsd / vol24hUsd
 
 Числитель приходит от DeFiLlama, знаменатель — от CoinGecko, и это **разные
 учёты**: у WhiteBIT расписание закрыто на 100%, а в обращении 40% — биржа держит
-свои токены разлоченными, но вне рынка. Расхождение называется в `notes`, а не
-прячется.
+свои токены разлоченными, но вне рынка. Обратный случай измерен на CC: навес
+ноль при календаре на +20% за год. Оба числа остаются, расхождение называется в
+`notes` и в warnings прогона, сверять их между собой нельзя.
 
 `nextUnlockCostInDailyVolumes` обязателен: разлок на 3 дневных объёма и на 30 —
-принципиально разные события. `netHolderYieldPct` считается, только когда
-известны обе половины; одна известна — поле `null` плюс запись, какая именно
-половина отсутствует и в какую сторону смещён результат.
+принципиально разные события. Считается он только от клиффа: у линейного
+вестинга дискретного момента нет, и «ближайший разлок» для него — выдумка.
+Измерено: клифф впереди у 12 из 28 строк с календарём, доля видна в warnings.
+`netHolderYieldPct` считается, только когда известны обе половины; одна известна
+— поле `null` плюс запись, какая именно половина отсутствует и куда смещён результат.
 
 **Пустой календарь не даёт ноль сам по себе.** `known_zero` только когда
 расписание покрыло не меньше 99% эмиссии либо `floatPct` не ниже 90%. Иначе
@@ -706,12 +731,14 @@ nextUnlockCostInDailyVolumes = nextUnlockUsd / vol24hUsd
 
 Возвращается — но никогда не как условие прохождения оценки:
 
-- `POST /manual/unlocks` — `{ ticker, date, tokens, category, sourceUrl }`,
-  **`sourceUrl` обязателен и валидируется как URL**; `GET /manual/unlocks/{token}`;
-  `DELETE /manual/unlocks/{id}`.
-- `POST /manual/overrides/{token}` — необязательные `incentives12mUsd`,
-  `buyback12mUsd`, `cashDistrib12mUsd`, `burn12mUsd` и **обязательный
-  `sourceUrl`**.
+- `POST /manual/unlocks` — `{ ticker, date, tokens, category, sourceUrl, asOf }`,
+  **`sourceUrl` и `asOf` обязательны**; `GET /manual/unlocks/{token}`;
+  `DELETE /manual/unlocks/{id}`. `asOf` — дата документа-источника: без неё
+  метрика обнуляется валидатором, а время записи вместо неё было бы подделкой
+  происхождения. Тикер разрешается в `coingeckoId` по снимку, неоднозначный — 409.
+- `POST /manual/overrides/{token}` перенесён на **шаг 13**: его четыре поля
+  никто не читает до `incentiveAdjustedRevenue`, а эндпоинт, принимающий числа
+  без потребителя, — заглушка будущего шага.
 
 Главный из оверрайдов — `incentives12mUsd`, стоимость раздаваемых токенов. Её
 нет ни в CoinGecko, ни в сводках DeFiLlama, а без неё «выручка 8 млн» и
@@ -721,12 +748,23 @@ nextUnlockCostInDailyVolumes = nextUnlockUsd / vol24hUsd
 более чем вдвое, попадают в `notes`, и берётся значение API. Тихо предпочесть
 ручной ввод нельзя. Происхождение каждого события видно в `origin`.
 
-**Приёмка.** Один POST собирает разлоки для всей выборки · сырые ответы на
-диске · `dilution12mPct` и `netHolderYieldPct` заполнены у покрытых токенов ·
-у каждого числа `sourceUrl` и `asOf` источника · непокрытый токен получает
-типизированное состояние, а не ноль · `POST /manual/unlocks` без `sourceUrl`
-→ 400 · ручная запись видна как `origin: 'manual'` · повтор в течение суток не
-ходит в сеть · состав и `builtAt` не изменились.
+**Приёмка выполнена 2026-08-28.** Один POST собирает разлоки по всей вселенной ·
+сырые ответы на диске · `unlock12mPct` и `netHolderYieldPct` заполнены у
+покрытых · у каждого числа `sourceUrl` и `asOf` источника · непокрытый токен
+получает типизированное состояние, а не ноль · `POST /manual/unlocks` без
+`sourceUrl` → 400 · ручная запись видна как `origin: 'manual'` · повтор в
+течение суток не ходит в сеть · состав и `builtAt` не изменились.
+
+**Измерено на вселенной 2026-08-26 (1300 монет):** карта из 370 документов за
+55 с без ошибок, документы 220 совпавших слагов за 30 с, календарь принят у
+8.77% строк и 77.96% капитализации, навес — у 98%. Знаменатель здесь полная
+вселенная, у шага 08 — active selection: числа несравнимы напрямую.
+
+**Принятые расхождения с этим ТЗ:** `streams` добавлены в контракт; `asOf`
+обязателен в ручном вводе; `/manual/overrides` перенесён на шаг 13. Склейка по
+контракту отложена: она требует bulk-метода `platforms` в `CoingeckoService`, а
+измеренный `mapping_failed` без неё равен нулю. Возврат к ней потребует
+`force=true`, поскольку карта строится один раз на версию вселенной.
 
 **Запрещено.** Подставлять ноль вместо неизвестного календаря. Считать
 `totalSupply − circulating` разводнением 12 месяцев. Складывать vesting-события

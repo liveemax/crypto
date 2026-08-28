@@ -1,9 +1,11 @@
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 import { UniverseCandidate } from 'src/core/universe/universe.types';
 import { DEFAULT_PROFILE, YIELD_HUNTER_PROFILE } from '../src/config/profiles';
 import { UniverseFilter } from '../src/core/universe/universe.filter';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     rank: 1,
     coingeckoId: 'aave',
     ticker: 'AAVE',

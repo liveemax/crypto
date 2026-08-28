@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DISCOVERY } from '../../config/discovery';
+import { EMPTY_TOKENOMICS, TOKENOMICS_SNAPSHOT } from '../tokenomics/tokenomics.constants';
+import { applyTokenomics, overhangPctOf } from '../tokenomics/tokenomics.calc';
 import { DEFAULT_PROFILE, getProfile } from '../../config/profiles';
 import { StoreService } from '../store/store.service';
 import { UniverseBuilder } from './universe.builder';
@@ -17,7 +19,7 @@ import type {
   ScreenSelectionRequest,
 } from './filter-state.types';
 import type { AlphaOutcome } from './alpha';
-import type { CandidateView } from './universe.types';
+import type { CandidateView, UniverseStep } from './universe.types';
 import type { AnalysisProfile } from './profile.types';
 import {
   BuildProgressEvent,
@@ -36,6 +38,7 @@ import {
   UniverseView,
 } from './universe.types';
 import { JobService } from '../jobs/job.service';
+import type { TokenomicsSnapshot } from '../tokenomics/tokenomics.types';
 
 const SNAPSHOT_NAME = 'universe-source';
 const DAY_MS = 86_400_000;
@@ -230,13 +233,22 @@ export class UniverseService {
     });
     const output = await this.builder.refreshNumbers(snapshot.candidates);
 
+    // Календарь тот же, но circulating, цена и объём изменились. Без пересчёта
+    // рядом со свежей ценой стояло бы разводнение от прошлого circulating —
+    // подделка происхождения, которую валидатор не поймает.
+    const stored = await this.store.loadSnapshot<TokenomicsSnapshot>(TOKENOMICS_SNAPSHOT);
+    const facts = stored !== null && stored.universeVersion === snapshot.version ? stored : null;
+    const applied = applyTokenomics(output.candidates, facts);
+
     const refreshed: UniverseSnapshot = {
       ...snapshot,
       sources: { ...snapshot.sources, ...output.sources },
-      candidates: output.candidates,
+      candidates: applied.candidates,
       profileId: undefined,
       funnel: undefined,
-      warnings: [...new Set([...snapshot.warnings, ...output.warnings])],
+      warnings: [
+        ...new Set([...snapshot.warnings, ...output.warnings, ...applied.warnings]),
+      ],
     };
 
     this.report({
@@ -330,6 +342,104 @@ export class UniverseService {
   /** Дожидается завершения текущей пересборки — нужен в тестах и в ручных прогонах. */
   async wait(): Promise<void> {
     if (this.inFlight) await this.inFlight;
+  }
+
+  /**
+   * Запускает фоновую сетевую задачу другого модуля под общим замком и общим
+   * счётчиком. Своё состояние в чужом сервисе означает, что идущая задача видна
+   * в GET /universe/status как idle.
+   */
+  async runExternalJob(
+    name: string,
+    step: UniverseStep,
+    label: string,
+    run: (report: (event: BuildProgressEvent) => void) => Promise<string>,
+  ): Promise<UniverseRefreshResult> {
+    const ageDays = await this.ageDays();
+    const busy = this.jobs.current;
+    if (busy) {
+      return {
+        started: false,
+        reason: 'already_running',
+        ageDays,
+        message:
+          `Уже идёт «${busy.name}», ${busy.elapsedSec} с. Одновременно выполняется ` +
+          'одна сетевая задача: лимит источников общий на процесс',
+      };
+    }
+    if (!this.jobs.tryAcquire(name)) {
+      return {
+        started: false,
+        reason: 'already_running',
+        ageDays,
+        message: 'Слот занят другой задачей. Проверьте GET /universe/status',
+      };
+    }
+
+    this.state = 'running';
+    this.lastError = null;
+    this.failures = 0;
+    this.startedAtMs = Date.now();
+    this.progress = {
+      ...idleProgress(),
+      step,
+      label: `Старт: ${label}`,
+      startedAt: new Date().toISOString(),
+    };
+
+    this.inFlight = run((event) => this.report(event))
+      .then((done) => {
+        this.state = 'idle';
+        this.progress = this.withElapsed({
+          ...this.progress,
+          step: 'done',
+          label: done,
+          current: 1,
+          total: 1,
+          percent: 100,
+        });
+        this.logger.log(done);
+      })
+      .catch((error: unknown) => {
+        this.state = 'error';
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.progress = {
+          ...this.progress,
+          step: 'failed',
+          label: 'Прервано',
+          lastError: this.lastError,
+        };
+        this.logger.error(`${name} прервана: ${this.lastError}`);
+      })
+      .finally(() => this.jobs.release(name));
+
+    return {
+      started: true,
+      reason: 'forced',
+      ageDays,
+      message: `${label}: задача запущена в фоне. Ход — в GET /universe/status`,
+    };
+  }
+
+  /**
+   * Записывает пересчитанные числа в тот же снимок. Состав, version и builtAt
+   * не меняются: второй слой данных поверх вселенной — это уже пройденная
+   * ошибка с asOfFees, равным времени запроса.
+   */
+  async saveNumbers(update: {
+    candidates: UniverseCandidate[];
+    sources?: Record<string, string>;
+    warnings?: string[];
+  }): Promise<void> {
+    const snapshot = await this.requireLatest();
+    await this.store.saveSnapshot(SNAPSHOT_NAME, {
+      ...snapshot,
+      sources: { ...snapshot.sources, ...(update.sources ?? {}) },
+      candidates: update.candidates,
+      profileId: undefined,
+      funnel: undefined,
+      warnings: [...new Set([...snapshot.warnings, ...(update.warnings ?? [])])],
+    } satisfies UniverseSnapshot);
   }
 
   /** Счётчик пересборки и текущий результат композиции фильтров. */

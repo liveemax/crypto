@@ -1,6 +1,7 @@
 import { resolveIdentity, revenueStateOf } from '../src/core/universe/comparison';
 import type { SectorMapEntry } from '../src/config/sector-map';
 import type { UniverseCandidate } from '../src/core/universe/universe.types';
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 
 const layer1: SectorMapEntry = {
   category: 'layer-1', group: 'layer-1', archetype: 'chain', rationale: 'тест',
@@ -58,6 +59,7 @@ describe('Группа сравнения', () => {
 
 function row(patch: Partial<UniverseCandidate>): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     sourceHealthy: true, revenue12mUsd: null, matchedBy: 'gecko_id',
     assetArchetype: 'protocol', ...patch,
   } as UniverseCandidate;

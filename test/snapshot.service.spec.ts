@@ -6,10 +6,12 @@ import { StoreService } from '../src/core/store/store.service';
 import { SnapshotRow } from '../src/core/types';
 import { UniverseService } from '../src/core/universe/universe.service';
 import { UniverseCandidate } from '../src/core/universe/universe.types';
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 import { JobService } from '../src/core/jobs/job.service';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     rank: 1,
     coingeckoId: 'aave',
     ticker: 'AAVE',

@@ -2,9 +2,11 @@ import { COVERAGE } from '../src/config/coverage';
 import { buildCoverage } from '../src/core/universe/coverage';
 import { emptyFilterState } from '../src/core/universe/filter-state.service';
 import type { UniverseCandidate } from '../src/core/universe/universe.types';
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     rank: 1,
     coingeckoId: 'aave',
     ticker: 'AAVE',

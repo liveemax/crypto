@@ -5,11 +5,13 @@ import { UniverseBuilder } from '../src/core/universe/universe.builder';
 import { UniverseFilter } from '../src/core/universe/universe.filter';
 import { UniverseService } from '../src/core/universe/universe.service';
 import { UniverseCandidate, UniverseSnapshot } from '../src/core/universe/universe.types';
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 import { JobService } from '../src/core/jobs/job.service';
 import { FilterStateService } from '../src/core/universe/filter-state.service';
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     rank: 1,
     coingeckoId: 'aave',
     ticker: 'AAVE',

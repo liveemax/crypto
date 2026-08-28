@@ -3,12 +3,14 @@ import { DEEP_VALUE_PROFILE, DEFAULT_PROFILE } from '../src/config/profiles';
 import { StoreService } from '../src/core/store/store.service';
 import { AgentContext, SnapshotRow } from '../src/core/types';
 import { UniverseCandidate } from '../src/core/universe/universe.types';
+import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 import { ValidateService } from '../src/core/validate/validate.service';
 
 const NOW = new Date().toISOString();
 
 function candidate(overrides: Partial<UniverseCandidate> = {}): UniverseCandidate {
   return {
+    ...EMPTY_TOKENOMICS,
     rank: 1, coingeckoId: 'aave', ticker: 'AAVE', name: 'Aave', priceUsd: 250,
     circulating: 15_000_000, totalSupply: 16_000_000, mcapCalcUsd: 3_750_000_000,
     mcapReportedUsd: 3_750_000_000, mcapDivergencePct: 0, fdvUsd: 4_000_000_000,

@@ -2,13 +2,8 @@
 export const AGENT = Symbol('AGENT');
 
 /**
- * Только для выпадающего списка Swagger. Поиск агента идёт по DI, поэтому имя
- * отсюда без зарегистрированного провайдера честно отвечает 404, а не заглушкой.
+ * Только для выпадающего списка Swagger. Кодовые оценки сюда не входят: они не
+ * агенты и живут в core/evaluation. Имя отсюда без зарегистрированного
+ * провайдера честно отвечает 404, а не заглушкой.
  */
-export const AGENT_NAMES = [
-  'screener',
-  'unlocks',
-  'sector-position',
-  'mechanism',
-  'critic',
-] as const;
+export const AGENT_NAMES = ['mechanism', 'critic'] as const;

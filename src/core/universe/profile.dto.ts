@@ -128,10 +128,19 @@ export class AnalysisProfileDto {
   @Type(() => ProfileThresholdsDto)
   thresholds!: ProfileThresholdsDto;
 
-  @ApiProperty({ type: [String], example: ['screener', 'unlocks', 'mechanism'] })
+  @ApiProperty({
+    type: [String],
+    example: ['valuation', 'tokenomics', 'sectorPosition'],
+    description: 'Кодовые оценки: считаются локально, без сети и без модели',
+  })
   @IsArray()
   @IsString({ each: true })
-  agents!: string[];
+  codeEvaluations!: string[];
+
+  @ApiProperty({ type: [String], example: ['mechanism', 'critic'] })
+  @IsArray()
+  @IsString({ each: true })
+  llmAgents!: string[];
 
   @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } })
   @IsObject()

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AgentsModule } from './agents/agents.module';
 import { AppConfigModule } from './config/config.module';
+import { EvaluationModule } from './core/evaluation/evaluation.module';
 import { FetchModule } from './core/fetch/fetch.module';
 import { ManualModule } from './core/manual/manual.module';
 import { TokenomicsModule } from './core/tokenomics/tokenomics.module';
@@ -18,6 +19,7 @@ import { JobsModule } from './core/jobs/jobs.module';
     UniverseModule,
     ManualModule,
     TokenomicsModule,
+    EvaluationModule,
     FetchModule,
     AgentsModule,
     JobsModule

@@ -38,7 +38,7 @@ describe('ConfigController (e2e)', () => {
     const response = await request(app.getHttpServer()).get('/config/thresholds').expect(200);
     expect(response.body).toEqual({
       thresholds: { minMcapUsd: 50_000_000, minAnnualRevenueUsd: 1_000_000, maxPRev: 60 },
-      weights: { unlocks: 0.35, mechanism: 0.25, screener: 0.2, sectorPosition: 0.2 },
+      weights: { tokenomics: 0.35, mechanism: 0.25, valuation: 0.2, sectorPosition: 0.2 },
       maxStaleDays: 45,
     });
   });

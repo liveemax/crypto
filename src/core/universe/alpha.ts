@@ -254,6 +254,52 @@ function gapOf(candidate: CandidateView, view: AlphaView): AlphaDataGap {
   };
 }
 
+/** Позиция в нише без решения об отсеве: то же, что AlphaView, минус вердикт. */
+export type SectorPosition = Omit<AlphaView, 'decision' | 'decisionReason'>;
+
+/**
+ * Перцентили и место в нише по произвольному входу, никого не отсекая.
+ * Оценка обязана считать позицию и при выключенной альфе, а вторая реализация
+ * одной формулы разъедется за шаг и разъедется тихо.
+ */
+export function sectorPositions(
+  candidates: readonly CandidateView[],
+  config: AlphaConfig,
+  outliers: string[] = [],
+): Map<string, SectorPosition> {
+  const sectors = new Map<string, CandidateView[]>();
+  for (const item of candidates) {
+    const group = groupOf(item);
+    if (group === null) continue;
+    const bucket = sectors.get(group);
+    if (bucket) bucket.push(item);
+    else sectors.set(group, [item]);
+  }
+
+  const positions = new Map<string, SectorPosition>();
+  for (const members of sectors.values()) {
+    const scored = scoreSector(members, config, outliers);
+    const peers = pickPeers(members);
+    const ranked = scored.filter((row): row is RankedMember => row.sectorScore !== null);
+    ranked.sort(byScoreDesc);
+    const place = new Map<string, number>();
+    ranked.forEach((row, index) => place.set(row.candidate.coingeckoId, index + 1));
+
+    for (const row of scored) {
+      positions.set(row.candidate.coingeckoId, {
+        sectorSize: members.length,
+        rankInSector: place.get(row.candidate.coingeckoId) ?? null,
+        sectorScore: row.sectorScore,
+        percentiles: row.percentiles,
+        revenueSharePct: row.revenueSharePct,
+        comparisonAvailable: row.sectorScore !== null,
+        peers: peers.filter((ticker) => ticker !== row.candidate.ticker),
+      });
+    }
+  }
+  return positions;
+}
+
 /** Считает перцентили внутри сектора: сравнение идёт только с прямыми конкурентами. */
 function scoreSector(
   members: CandidateView[],

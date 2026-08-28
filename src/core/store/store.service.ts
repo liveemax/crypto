@@ -78,6 +78,31 @@ export class StoreService {
     }
   }
 
+  /**
+   * Сохраняет воспроизводимый прогон целиком: каталог даты, имя — runId.
+   * Рядом обновляется latest.json — указатель на последний, а не второй
+   * источник правды: тысячи per-token файлов нечем сверить между собой.
+   */
+  async saveRun(kind: string, runId: string, value: unknown): Promise<string> {
+    const path = await this.availablePath(
+      join(this.root, this.safe(kind), this.today()),
+      this.safe(runId),
+    );
+    await this.writeJson(path, value);
+    await this.writeJson(join(this.root, this.safe(kind), 'latest.json'), value, true);
+    return path;
+  }
+
+  /** Читает последний прогон указанного вида; файла нет — null, а не исключение. */
+  async loadRun<T>(kind: string): Promise<T | null> {
+    try {
+      return await this.readJson<T>(join(this.root, this.safe(kind), 'latest.json'));
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return null;
+      throw error;
+    }
+  }
+
   /** Сохраняет результат агента в каталоге текущей даты. */
   async saveResult(agent: string, token: string, result: unknown): Promise<string> {
     const dir = join(this.root, 'results', this.today(), this.safe(agent));

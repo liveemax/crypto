@@ -14,55 +14,73 @@ export function metric(
   return { value, unit, sourceUrl, asOf };
 }
 
+export interface MetricsCheck {
+  metrics: Record<string, Metric>;
+  dataQuality: number;
+  missing: string[];
+  validator: { dropped: string[]; stale: string[] };
+}
+
+/**
+ * Проверяет происхождение и актуальность набора метрик. Чистая функция: её же
+ * зовут блоки кодовой оценки, у которых Nest-провайдера нет и быть не должно.
+ * Вторая реализация этой проверки разъехалась бы с агентами за один шаг.
+ */
+export function checkMetrics(
+  metrics: Record<string, Metric>,
+  missingInput: string[] = [],
+  maxStaleDays = MAX_STALE_DAYS,
+): MetricsCheck {
+  const dropped: string[] = [];
+  const stale: string[] = [];
+  const missing = new Set(missingInput);
+  const now = Date.now();
+
+  const checked: Record<string, Metric> = Object.fromEntries(
+    Object.entries(metrics).map(([name, original]) => {
+      const item: Metric = { ...original };
+
+      if (item.value === null) {
+        missing.add(name);
+      } else if (!item.sourceUrl) {
+        item.value = null;
+        item.droppedReason = 'no_source';
+        dropped.push(name);
+        missing.add(name);
+      } else if (!item.asOf) {
+        item.value = null;
+        item.droppedReason = 'no_as_of';
+        dropped.push(name);
+        missing.add(name);
+      } else {
+        const timestamp = Date.parse(item.asOf);
+        const staleDays = Math.floor((now - timestamp) / DAY_MS);
+        if (Number.isFinite(staleDays) && staleDays > maxStaleDays) {
+          item.staleDays = staleDays;
+          stale.push(name);
+        }
+      }
+
+      return [name, item];
+    }),
+  );
+
+  const values = Object.values(checked);
+  const populated = values.filter((item) => item.value !== null).length;
+  const completeShare = values.length === 0 ? 0 : populated / values.length;
+
+  return {
+    metrics: checked,
+    dataQuality: stale.length > 0 ? completeShare * 0.85 : completeShare,
+    missing: [...missing].sort(),
+    validator: { dropped: dropped.sort(), stale: stale.sort() },
+  };
+}
+
 @Injectable()
 export class ValidateService {
   /** Проверяет происхождение и актуальность всех метрик результата агента. */
   validate(result: AgentResult, maxStaleDays = MAX_STALE_DAYS): AgentResult {
-    const dropped: string[] = [];
-    const stale: string[] = [];
-    const missing = new Set(result.missing);
-    const now = Date.now();
-
-    const metrics = Object.fromEntries(
-      Object.entries(result.metrics).map(([name, original]) => {
-        const checked: Metric = { ...original };
-
-        if (checked.value === null) {
-          missing.add(name);
-        } else if (!checked.sourceUrl) {
-          checked.value = null;
-          checked.droppedReason = 'no_source';
-          dropped.push(name);
-          missing.add(name);
-        } else if (!checked.asOf) {
-          checked.value = null;
-          checked.droppedReason = 'no_as_of';
-          dropped.push(name);
-          missing.add(name);
-        } else {
-          const timestamp = Date.parse(checked.asOf);
-          const staleDays = Math.floor((now - timestamp) / DAY_MS);
-          if (Number.isFinite(staleDays) && staleDays > maxStaleDays) {
-            checked.staleDays = staleDays;
-            stale.push(name);
-          }
-        }
-
-        return [name, checked];
-      }),
-    );
-
-    const metricValues = Object.values(metrics);
-    const populated = metricValues.filter((item) => item.value !== null).length;
-    const completeShare = metricValues.length === 0 ? 0 : populated / metricValues.length;
-    const dataQuality = stale.length > 0 ? completeShare * 0.85 : completeShare;
-
-    return {
-      ...result,
-      metrics,
-      dataQuality,
-      missing: [...missing].sort(),
-      validator: { dropped: dropped.sort(), stale: stale.sort() },
-    };
+    return { ...result, ...checkMetrics(result.metrics, result.missing, maxStaleDays) };
   }
 }

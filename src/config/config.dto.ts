@@ -37,16 +37,16 @@ export class ScreenerThresholdsDto {
 }
 
 export class CompositeWeightsDto {
-  @ApiProperty({ example: 0.35 })
-  unlocks!: number;
+  @ApiProperty({ example: 0.35, description: 'NHY: доход держателя минус разводнение' })
+  tokenomics!: number;
 
-  @ApiProperty({ example: 0.25 })
+  @ApiProperty({ example: 0.25, description: 'Механизм возврата ценности и качество роста' })
   mechanism!: number;
 
-  @ApiProperty({ example: 0.2 })
-  screener!: number;
+  @ApiProperty({ example: 0.2, description: 'Дешевизна относительно собственной выручки' })
+  valuation!: number;
 
-  @ApiProperty({ example: 0.2 })
+  @ApiProperty({ example: 0.2, description: 'Положение среди прямых конкурентов' })
   sectorPosition!: number;
 }
 

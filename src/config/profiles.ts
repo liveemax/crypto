@@ -1,4 +1,5 @@
 import { DISCOVERY } from './discovery';
+import type { EvaluationComponentName } from '../core/evaluation/evaluation.types';
 import type { AnalysisProfile, ScreenRule } from '../core/universe/profile.types';
 
 const BASE_SCREEN: ScreenRule[] = [
@@ -120,8 +121,16 @@ const DEEP_VALUE_ALPHA: AnalysisProfile['alpha'] = {
   ],
 };
 
-const AGENTS = ['screener', 'unlocks', 'sector-position', 'mechanism', 'critic'];
-const WEIGHTS = { unlocks: 0.35, mechanism: 0.25, screener: 0.2, sectorPosition: 0.2 };
+const CODE_EVALUATIONS: EvaluationComponentName[] = [
+  'valuation',
+  'tokenomics',
+  'sectorPosition',
+];
+const LLM_AGENTS = ['mechanism', 'critic'];
+// Ключи совпадают с именами компонентов посимвольно: старые screener и unlocks
+// тихо выпадали бы из композита, и никто бы этого не заметил. critic в веса не
+// входит — он штрафной множитель к итогу, а не слагаемое.
+const WEIGHTS = { tokenomics: 0.35, mechanism: 0.25, valuation: 0.2, sectorPosition: 0.2 };
 const TIER_CUTS = { a: 70, b: 45, minDataQuality: 0.5 };
 const THRESHOLDS = {
   minMcapUsd: 50_000_000,
@@ -136,7 +145,8 @@ export const DEFAULT_PROFILE = {
   screen: BASE_SCREEN,
   alpha: DEFAULT_ALPHA,
   thresholds: THRESHOLDS,
-  agents: AGENTS,
+  codeEvaluations: CODE_EVALUATIONS,
+  llmAgents: LLM_AGENTS,
   weights: WEIGHTS,
   tierCuts: TIER_CUTS,
 } satisfies AnalysisProfile;

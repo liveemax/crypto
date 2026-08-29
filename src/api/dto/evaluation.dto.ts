@@ -103,6 +103,24 @@ export class NotEvaluatedComponentDto {
   whatWeMeasureInstead!: string[];
 }
 
+export class RiskFlagDto {
+  @ApiProperty({
+    enum: ['high_turnover', 'illiquid', 'negative_after_incentives'],
+    example: 'high_turnover',
+  })
+  id!: string;
+  @ApiProperty({
+    example: 'Оборот 63.4% от капитализации за сутки: экстремально высокая торговая ' +
+      'активность, возможна манипуляция ценой',
+  })
+  label!: string;
+  @ApiProperty({ example: 63.4, description: 'Измеренное значение, из которого посчитан флаг' })
+  value!: number;
+  @ApiProperty({ example: 10 }) penalty!: number;
+  @ApiProperty({ type: MetricDto, description: 'Provenance входной метрики флага' })
+  metric!: MetricDto;
+}
+
 export class CandidateEvaluationDto {
   @ApiProperty({ example: 'aave' }) coingeckoId!: string;
   @ApiProperty({ example: 'AAVE' }) ticker!: string;
@@ -119,6 +137,20 @@ export class CandidateEvaluationDto {
     description: 'Компоненты композита без score: не ноль, а явная причина',
   })
   notEvaluated!: NotEvaluatedComponentDto[];
+  @ApiProperty({
+    type: RiskFlagDto,
+    isArray: true,
+    description: 'Сработавшие риск-флаги: не четвёртый компонент, score не меняют',
+  })
+  riskFlags!: RiskFlagDto[];
+  @ApiProperty({ example: 10, description: 'Сумма штрафов флагов, не более 20' })
+  flagPenalty!: number;
+  @ApiProperty({
+    type: [String],
+    example: ['incentives12mUsd'],
+    description: 'Метрик не хватило для риск-флагов: неизвестное не стало нулём',
+  })
+  riskMissing!: string[];
 }
 
 export class EvaluationContextDto {

@@ -6,6 +6,7 @@ import { UniverseBuilder } from '../src/core/universe/universe.builder';
 import { UniverseFilter } from '../src/core/universe/universe.filter';
 import { UniverseService } from '../src/core/universe/universe.service';
 import { EvaluationService } from '../src/core/evaluation/evaluation.service';
+import { ManualService } from '../src/core/manual/manual.service';
 import { StatusService } from '../src/core/system/status.service';
 import { TokenService } from '../src/core/system/token.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -172,7 +173,10 @@ describe('Приёмка шага 11: удобный публичный API', ()
       jobs,
       new FilterStateService(store),
     );
-    evaluation = new EvaluationService(store, universe);
+    const manual = {
+      incentiveOverridesByCoingeckoId: jest.fn(async () => new Map()),
+    } as unknown as ManualService;
+    evaluation = new EvaluationService(store, universe, manual);
   });
 
   describe('GET /status', () => {

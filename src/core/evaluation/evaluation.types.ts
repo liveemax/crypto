@@ -40,6 +40,22 @@ export interface EvaluationCheck {
   reason: string | null;
 }
 
+/** Три кодовых риск-флага шага 14.2: ликвидность по обороту и экономика после стимулов. */
+export type RiskFlagId = 'high_turnover' | 'illiquid' | 'negative_after_incentives';
+
+/**
+ * Риск-флаг рядом с CandidateEvaluation, а не внутри блока: он не влияет на
+ * score компонента и не входит в его dataQuality, только вычитается позже как
+ * flagPenalty.
+ */
+export interface RiskFlag {
+  id: RiskFlagId;
+  label: string;
+  value: number;
+  penalty: number;
+  metric: Metric;
+}
+
 export interface EvaluationBlock {
   component: EvaluationComponentName;
   title: string;
@@ -66,6 +82,12 @@ export interface CandidateEvaluation {
   sectorPosition: EvaluationBlock;
   /** Компоненты композита, которых у этой карточки нет и не будет score:0. */
   notEvaluated: NotEvaluatedComponent[];
+  /** Сработавшие риск-флаги. Не четвёртый компонент: score и dataQuality не меняют. */
+  riskFlags: RiskFlag[];
+  /** Сумма штрафов сработавших флагов, не более 20 независимо от их числа. */
+  flagPenalty: number;
+  /** Метрики, которых не хватило для риск-флагов: неизвестное не стало нулём. */
+  riskMissing: string[];
 }
 
 export interface EvaluationSummary {

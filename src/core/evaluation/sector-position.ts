@@ -48,18 +48,25 @@ export function evaluateSectorPosition(
   for (const item of config.rankBy) metrics[item.field] = metricOf(candidate, item.field);
 
   return finishBlock('sectorPosition', TITLE, {
-    score: position?.sectorScore ?? null,
+    score: position?.businessScaleScore ?? null,
     verdict: {
       role,
       roleLabel: ROLE_LABELS[role],
-      sectorScore: position?.sectorScore ?? null,
+      businessScaleScore: position?.businessScaleScore ?? null,
       rankInSector: position?.rankInSector ?? null,
       sectorSize: position?.sectorSize ?? null,
+      tvlRank: position?.tvlRank ?? null,
+      revenueRank: position?.revenueRank ?? null,
+      tvlRanked: position?.tvlRanked ?? 0,
+      revenueRanked: position?.revenueRanked ?? 0,
+      tvlSharePct: position?.tvlSharePct ?? null,
       /** По скольким осям посчитано место. Место по семи осям и по одной — разные утверждения. */
       rankedOn: ranked.length,
       economicAxes,
       revenueSharePct: position?.revenueSharePct ?? null,
       comparisonAvailable: position?.comparisonAvailable ?? false,
+      alphaQualified: position?.alphaQualified ?? false,
+      alphaStatus: position?.alphaStatus ?? (candidate.comparisonGroup === null ? 'missing_sector' : 'insufficient_data'),
       comparisonGroup: candidate.comparisonGroup,
       /** true — альфа включена и сама режет эту нишу; на расчёт места это не влияет. */
       selectionApplied,
@@ -84,7 +91,7 @@ function roleOf(
   cheapness: number | null,
   scale: number | null,
 ): string {
-  if (position === null || position.sectorScore === null) return 'unknown';
+  if (position === null || position.businessScaleScore === null) return 'unknown';
   // Место есть, но экономику не измеряли: назвать его лидером или аутсайдером
   // значит выдать сравнение по предложению за сравнение бизнесов.
   if (economicAxes === 0) return 'supply_only';
@@ -117,7 +124,7 @@ function notesOf(
   if (candidate.comparisonGroup === null) {
     return 'Группа сравнения не определена: это пробел покрытия, а не последнее место. Токен остаётся в выборке.';
   }
-  if (position === null || position.sectorScore === null) {
+  if (position === null || position.businessScaleScore === null) {
     return 'Ни одна ось не дала перцентиля: в нише меньше трёх известных значений. Это пробел в данных, а не проигранное сравнение.';
   }
   if (economicAxes === 0) {

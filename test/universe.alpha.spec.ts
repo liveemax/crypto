@@ -219,10 +219,10 @@ describe('Приёмка шага 06: stateful alpha', () => {
     expect(byTicker.get('DX6')?.passed).toBe(false);
     expect(byTicker.get('DX6')?.rejectedAt).toBe('alpha_outranked');
 
-    expect(result.dataGapsTotal).toBe(2);
+    expect(result.dataGapsTotal).toBe(5);
     const gap = result.dataGaps.find((item) => item.ticker === 'DX7');
     expect(gap?.availableMetrics).toEqual(['revenue12mUsd']);
-    expect(gap?.missingMetrics).toContain('holderYieldPct');
+    expect(gap?.missingMetrics).toEqual(['tvlUsd']);
   });
 
   it('работает без screen: вход — весь снимок', async () => {

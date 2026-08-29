@@ -16,6 +16,7 @@ export const NUMERIC_FIELDS = [
   'payoutRatioPct',
   'pRev',
   'pFees',
+  'fdvRev',
   'revenuePerTvlPct',
   'tvlUsd',
   // Ранжировать по одному навесу нельзя: токен с навесом 100% и последним
@@ -56,6 +57,25 @@ export interface AlphaConfig {
   rankBy: { field: NumericField; direction: 'higher_better' | 'lower_better' }[];
 }
 
+export type ValuationField =
+  | 'pRev'
+  | 'pFees'
+  | 'fdvRev'
+  | 'holderYieldPct'
+  | 'revenuePerTvlPct';
+
+export interface ValuationConfig {
+  rankBy: {
+    field: ValuationField;
+    direction: 'higher_better' | 'lower_better';
+    weight: number;
+  }[];
+  minRankedValues: number;
+  minScoreMetrics: number;
+  minAvailableWeight: number;
+  formulaVersion: string;
+}
+
 export interface AnalysisProfile {
   id: string;
   title: string;
@@ -63,6 +83,7 @@ export interface AnalysisProfile {
   rationale: string;
   screen: ScreenRule[];
   alpha: AlphaConfig;
+  valuation: ValuationConfig;
   thresholds: { minMcapUsd: number; minAnnualRevenueUsd: number; maxPRev: number };
   /** Кодовые оценки: считаются локально, без сети и без модели. */
   codeEvaluations: EvaluationComponentName[];

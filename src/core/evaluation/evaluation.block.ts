@@ -9,6 +9,7 @@ export interface BlockInput {
   metrics: Record<string, Metric>;
   missing?: string[];
   notes: string;
+  adjustScoreForQuality?: boolean;
 }
 
 /**
@@ -34,7 +35,7 @@ export function finishBlock(
     validator: checked.validator,
   };
 
-  if (block.score !== null && block.dataQuality < 1) {
+  if (input.adjustScoreForQuality !== false && block.score !== null && block.dataQuality < 1) {
     block.scoreRaw = block.score;
     block.score = round(mul(block.score, add(0.5, mul(0.5, block.dataQuality))), 1);
   }

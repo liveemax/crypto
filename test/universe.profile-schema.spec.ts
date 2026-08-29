@@ -27,4 +27,23 @@ describe('Разовый профиль', () => {
     };
     expect(() => parseAnalysisProfile(badRule)).toThrow();
   });
+  it('valuation принимает любой порядок осей, но отклоняет неверную сумму весов', () => {
+    const reordered = {
+      ...DEFAULT_PROFILE,
+      valuation: { ...DEFAULT_PROFILE.valuation, rankBy: [...DEFAULT_PROFILE.valuation.rankBy].reverse() },
+    };
+    expect(parseAnalysisProfile(reordered).valuation.rankBy[0]?.field).toBe('revenuePerTvlPct');
+
+    const badWeights = {
+      ...DEFAULT_PROFILE,
+      valuation: {
+        ...DEFAULT_PROFILE.valuation,
+        rankBy: DEFAULT_PROFILE.valuation.rankBy.map((axis) =>
+          axis.field === 'pRev' ? { ...axis, weight: 0.3 } : axis,
+        ),
+      },
+    };
+    expect(() => parseAnalysisProfile(badWeights)).toThrow('valuation');
+  });
+
 });

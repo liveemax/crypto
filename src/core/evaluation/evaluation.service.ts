@@ -10,7 +10,7 @@ import type { CandidateView, UniverseView } from '../universe/universe.types';
 import { evaluateSectorPosition } from './sector-position';
 import { SUPPLY_FIELD } from './evaluation.constants';
 import { evaluateTokenomics } from './tokenomics-block';
-import { evaluateValuation } from './valuation';
+import { valuationPositions } from './valuation';
 import { inputHashes } from './evaluation.hash';
 import {
   EVALUATION_COMPONENTS,
@@ -123,6 +123,7 @@ export class EvaluationService {
     );
 
     const warnings: string[] = [];
+    const valuations = valuationPositions(selection, profile, screen);
     const positions = alphaOn
       ? new Map<string, SectorPosition | null>(
           selection.map((candidate) => [candidate.coingeckoId, candidate.alpha] as const),
@@ -152,7 +153,9 @@ export class EvaluationService {
       if (reusable) reused += 1;
       else recomputed += 1;
 
-      const valuation = reusable ? old.valuation : evaluateValuation(candidate, profile, screen);
+      const valuation = reusable && sameComparative
+        ? old.valuation
+        : valuations.get(candidate.coingeckoId)!;
 
       // tokenomics сравнивает навес внутри ниши, поэтому зависит от состава
       // группы так же, как sectorPosition, и переиспользуется по comparative.
@@ -227,8 +230,8 @@ export class EvaluationService {
         note: samePerToken
           ? sameComparative
             ? 'Числа и состав группы сравнения те же: прогон переиспользован целиком.'
-            : 'Состав группы сравнения изменился: пересчитаны sectorPosition и tokenomics, ' +
-              'оба сравнивают внутри ниши. valuation взят как есть.'
+            : 'Состав группы сравнения изменился: пересчитаны valuation, sectorPosition и tokenomics, ' +
+              'все три компонента сравнивают внутри ниши.'
           : 'Числа или профиль изменились: пересчитано всё.',
       },
     };

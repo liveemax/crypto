@@ -304,7 +304,54 @@ describe('Приёмка шага 10: массовая кодовая оценк
     });
     expect(broken?.valuation.missing).toEqual(expect.arrayContaining(['revenue12mUsd', 'pRev']));
     expect(broken?.valuation.dataQuality).toBeLessThan(healthy?.valuation.dataQuality ?? 1);
-    expect(broken?.valuation.scoreRaw).toBeGreaterThan(broken?.valuation.score ?? 0);
+    expect(broken?.valuation.score).toBeNull();
+    expect(broken?.valuation.scoreRaw).toBeUndefined();
+  });
+
+  it('ШАГ 12.2: дешёвый меньший бизнес выигрывает sector valuation, а provenance и гейт защищают score', async () => {
+    snapshot = snapshotOf([
+      named('LARGE', { tvlUsd: 3_000_000_000, revenue12mUsd: 300_000_000, pRev: 30, pFees: 20, fdvRev: 35, holderYieldPct: 1, revenuePerTvlPct: 10 }),
+      named('CHEAP', { tvlUsd: 1_000_000_000, revenue12mUsd: 100_000_000, pRev: 3, pFees: 2, fdvRev: 4, holderYieldPct: 8, revenuePerTvlPct: 10 }),
+      named('MID', { tvlUsd: 2_000_000_000, revenue12mUsd: 200_000_000, pRev: 12, pFees: 8, fdvRev: 15, holderYieldPct: 4, revenuePerTvlPct: 10 }),
+      named('NOSRC', { revenueSource: null, tvlSource: null, pRev: 1, pFees: 1, fdvRev: 1, holderYieldPct: 20, revenuePerTvlPct: 20 }),
+      named('ONE', { pFees: null, fdvRev: null, holderYieldPct: null, revenuePerTvlPct: null }),
+    ]);
+
+    await service.run({ refresh: true });
+    const run = runs.at(-1) as EvaluationRun;
+    const large = run.candidates.find((item) => item.ticker === 'LARGE')!;
+    const cheap = run.candidates.find((item) => item.ticker === 'CHEAP')!;
+    const noSource = run.candidates.find((item) => item.ticker === 'NOSRC')!;
+    const one = run.candidates.find((item) => item.ticker === 'ONE')!;
+
+    expect(large.sectorPosition.verdict.rankInSector).toBe(1);
+    expect(cheap.valuation.verdict.valuationRank).toBe(1);
+    expect(cheap.valuation.score).toBeGreaterThan(large.valuation.score ?? 100);
+    expect(cheap.valuation.verdict).toMatchObject({
+      availableMetrics: ['pRev', 'pFees', 'fdvRev', 'holderYieldPct', 'revenuePerTvlPct'],
+      availableWeight: 1,
+      formulaVersion: 'sector-valuation-v1',
+    });
+    expect(noSource.valuation.score).toBeNull();
+    expect(noSource.valuation.verdict.availableMetrics).toEqual([]);
+    expect(one.valuation.score).toBeNull();
+    expect(one.valuation.verdict.availableWeight).toBe(0.4);
+    expect(one.valuation.missing).toEqual(expect.arrayContaining(['pFees', 'fdvRev', 'holderYieldPct', 'revenuePerTvlPct']));
+  });
+
+  it('ШАГ 12.2 НЕГАТИВНЫЙ: два подтверждённых значения не образуют valuation percentile', async () => {
+    snapshot = snapshotOf([
+      named('PAIR1', { comparisonGroup: 'pair', pRev: 4 }),
+      named('PAIR2', { comparisonGroup: 'pair', pRev: 8 }),
+    ]);
+
+    await service.run({ refresh: true });
+    const run = runs.at(-1) as EvaluationRun;
+    for (const item of run.candidates) {
+      expect(item.valuation.score).toBeNull();
+      expect(item.valuation.verdict.percentiles).toMatchObject({ pRev: null, pFees: null });
+      expect(item.valuation.verdict.availableWeight).toBe(0);
+    }
   });
 
   it('appliedBy различает проверку screen и проверку оценки', async () => {

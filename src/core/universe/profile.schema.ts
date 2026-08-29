@@ -60,6 +60,39 @@ const alphaConfigSchema = z
     },
   );
 
+const valuationFields = [
+  'pRev', 'pFees', 'fdvRev', 'holderYieldPct', 'revenuePerTvlPct',
+] as const;
+
+const valuationConfigSchema = z
+  .object({
+    rankBy: z.array(z.object({
+      field: z.enum(valuationFields),
+      direction: z.enum(['higher_better', 'lower_better']),
+      weight: z.number().finite().positive(),
+    }).strict()).length(valuationFields.length),
+    minRankedValues: z.literal(3),
+    minScoreMetrics: z.number().int().min(2),
+    minAvailableWeight: z.number().min(0).max(1),
+    formulaVersion: z.string().trim().min(1),
+  })
+  .strict()
+  .superRefine((config, context) => {
+    const fields = config.rankBy.map((item) => item.field);
+    if (new Set(fields).size !== valuationFields.length || valuationFields.some((field) => !fields.includes(field))) {
+      context.addIssue({ code: 'custom', message: 'valuation.rankBy должен содержать каждую ось ровно один раз' });
+    }
+    const expected = { pRev: ['lower_better', 0.4], pFees: ['lower_better', 0.2], fdvRev: ['lower_better', 0.2], holderYieldPct: ['higher_better', 0.1], revenuePerTvlPct: ['higher_better', 0.1] } as const;
+    for (const item of config.rankBy) {
+      const rule = expected[item.field];
+      if (item.direction !== rule[0] || Math.abs(item.weight - rule[1]) > 1e-9) {
+        context.addIssue({ code: 'custom', message: `Неверные направление или вес valuation для ${item.field}` });
+      }
+    }
+    const total = config.rankBy.reduce((sum, item) => sum + item.weight, 0);
+    if (Math.abs(total - 1) > 1e-9) context.addIssue({ code: 'custom', message: 'Сумма весов valuation.rankBy должна быть равна 1' });
+  });
+
 /** Проверяет разовую конфигурацию альфы из тела POST /universe/alpha. */
 export function parseAlphaConfig(value: unknown): AlphaConfig {
   return alphaConfigSchema.parse(dropUndefined(value)) as AlphaConfig;
@@ -71,6 +104,7 @@ const profileSchema = z
     rationale: z.string().trim().min(1),
     screen: z.array(screenRuleSchema).min(1),
     alpha: alphaConfigSchema,
+    valuation: valuationConfigSchema,
     thresholds: z.object({
       minMcapUsd: z.number().finite().nonnegative(),
       minAnnualRevenueUsd: z.number().finite().nonnegative(),

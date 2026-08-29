@@ -354,6 +354,30 @@ describe('Приёмка шага 10: массовая кодовая оценк
     }
   });
 
+  it('ШАГ 12.2: одинаковый score из разного числа осей различим по metadata', async () => {
+    snapshot = snapshotOf([
+      named('TWO', { pRev: 10, pFees: null, fdvRev: 12, holderYieldPct: null, revenuePerTvlPct: null }),
+      named('THREE1', { pRev: 10, pFees: 5, fdvRev: 12, holderYieldPct: null, revenuePerTvlPct: null }),
+      named('THREE2', { pRev: 10, pFees: 5, fdvRev: 12, holderYieldPct: null, revenuePerTvlPct: null }),
+      named('THREE3', { pRev: 10, pFees: 5, fdvRev: 12, holderYieldPct: null, revenuePerTvlPct: null }),
+    ]);
+
+    await service.run({ refresh: true });
+    const run = runs.at(-1) as EvaluationRun;
+    const twoAxes = run.candidates.find((item) => item.ticker === 'TWO')!;
+    const threeAxes = run.candidates.find((item) => item.ticker === 'THREE1')!;
+
+    expect(twoAxes.valuation.score).toBe(threeAxes.valuation.score);
+    expect(twoAxes.valuation.verdict).toMatchObject({
+      availableMetrics: ['pRev', 'fdvRev'],
+      availableWeight: 0.6,
+    });
+    expect(threeAxes.valuation.verdict).toMatchObject({
+      availableMetrics: ['pRev', 'pFees', 'fdvRev'],
+      availableWeight: 0.8,
+    });
+  });
+
   it('appliedBy различает проверку screen и проверку оценки', async () => {
     await universe.applyScreen({ enabled: true, profileId: 'deep-value' });
     await service.run({ profileId: 'deep-value' });

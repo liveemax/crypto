@@ -96,6 +96,11 @@ export class ManualService {
     return { ...identity, override: all.get(identity.coingeckoId) ?? null };
   }
 
+  /** Все override стимулов разом, ключ — coingeckoId. Для массового кодового прогона оценки. */
+  async incentiveOverridesByCoingeckoId(): Promise<Map<string, ManualIncentiveOverrideRecord>> {
+    return this.overridesById();
+  }
+
   private async overridesById(): Promise<Map<string, ManualIncentiveOverrideRecord>> {
     const stored = await this.store.loadState<Record<string, ManualIncentiveOverrideRecord>>(
       OVERRIDES_STATE,

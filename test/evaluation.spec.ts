@@ -2,6 +2,8 @@ import { DEEP_VALUE_PROFILE, DEFAULT_PROFILE } from '../src/config/profiles';
 import { EvaluationService } from '../src/core/evaluation/evaluation.service';
 import type { CandidateEvaluation, EvaluationRun } from '../src/core/evaluation/evaluation.types';
 import { JobService } from '../src/core/jobs/job.service';
+import { ManualService } from '../src/core/manual/manual.service';
+import type { ManualIncentiveOverrideRecord } from '../src/core/manual/manual.types';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
 import { FilterStateService } from '../src/core/universe/filter-state.service';
@@ -158,11 +160,17 @@ describe('Приёмка шага 10: массовая кодовая оценк
   let store: StoreService;
   let universe: UniverseService;
   let service: EvaluationService;
+  let manual: ManualService;
+  let incentiveOverrides: Map<string, ManualIncentiveOverrideRecord>;
 
   beforeEach(() => {
     snapshot = snapshotOf(population());
     filterState = { value: null };
     runs = [];
+    incentiveOverrides = new Map();
+    manual = {
+      incentiveOverridesByCoingeckoId: jest.fn(async () => incentiveOverrides),
+    } as unknown as ManualService;
     store = {
       loadSnapshot: jest.fn(async () => snapshot),
       saveSnapshot: jest.fn(async () => '/tmp/universe.json'),
@@ -185,7 +193,7 @@ describe('Приёмка шага 10: массовая кодовая оценк
       new JobService(),
       new FilterStateService(store),
     );
-    service = new EvaluationService(store, universe);
+    service = new EvaluationService(store, universe, manual);
   });
 
   it('один POST создаёт три компонента ровно по составу выборки', async () => {
@@ -462,5 +470,86 @@ describe('Приёмка шага 10: массовая кодовая оценк
     expect(missing.status).toBe('not_in_selection');
     expect(missing.reason).toContain('нет в текущем снимке');
     expect(missing.nextAction).not.toBeNull();
+  });
+
+  describe('ШАГ 14.2: риск-флаги подключены к run()', () => {
+    it('без override и с обычным оборотом флагов нет, incentives12mUsd в riskMissing', async () => {
+      await service.run();
+      const run = runs.at(-1) as EvaluationRun;
+      const dx1 = run.candidates.find((item) => item.ticker === 'DX1')!;
+
+      expect(dx1.riskFlags).toEqual([]);
+      expect(dx1.flagPenalty).toBe(0);
+      expect(dx1.riskMissing).toContain('incentives12mUsd');
+      // Флаги не сидят внутри компонентов: это не четвёртый компонент.
+      expect(dx1.tokenomics.missing).not.toContain('turnoverPct');
+      expect(dx1.tokenomics.missing).not.toContain('incentives12mUsd');
+    });
+
+    it('экстремальный оборот даёт high_turnover, не меняя score компонентов', async () => {
+      snapshot = snapshotOf([named('HOT', { turnoverPct: 90 })]);
+      await service.run({ refresh: true });
+      const hot = (runs.at(-1) as EvaluationRun).candidates[0];
+
+      snapshot = snapshotOf([named('HOT', { turnoverPct: 10 })]);
+      await service.run({ refresh: true });
+      const calm = (runs.at(-1) as EvaluationRun).candidates[0];
+
+      expect(hot.riskFlags).toHaveLength(1);
+      expect(hot.riskFlags[0].id).toBe('high_turnover');
+      expect(hot.flagPenalty).toBe(10);
+      // Одни и те же tokenomics/valuation входы — score не зависит от оборота.
+      expect(hot.tokenomics.score).toBe(calm.tokenomics.score);
+    });
+
+    it('override стимулов даёт negative_after_incentives в сохранённом run', async () => {
+      snapshot = snapshotOf([named('AID', { revenue12mUsd: 3_000_000 })]);
+      incentiveOverrides.set('aid', {
+        incentives12mUsd: 9_000_000,
+        sourceUrl: 'https://official.example/incentives',
+        asOf: NOW,
+        coingeckoId: 'aid',
+        ticker: 'AID',
+        origin: 'manual',
+        createdAt: NOW,
+      });
+
+      await service.run({ refresh: true });
+      const aid = (runs.at(-1) as EvaluationRun).candidates[0];
+
+      expect(aid.riskFlags).toHaveLength(1);
+      expect(aid.riskFlags[0]).toMatchObject({
+        id: 'negative_after_incentives',
+        value: -6_000_000,
+        penalty: 10,
+      });
+      expect(aid.flagPenalty).toBe(10);
+      expect(aid.riskMissing).not.toContain('incentives12mUsd');
+    });
+
+    it('флаги пересчитываются заново на каждом run(), даже если компоненты переиспользованы', async () => {
+      snapshot = snapshotOf([named('AID', { revenue12mUsd: 3_000_000 })]);
+      const first = await service.run();
+      expect(first.reuse.components.tokenomics.status).toBe('recomputed');
+      const beforeOverride = (runs.at(-1) as EvaluationRun).candidates[0];
+      expect(beforeOverride.riskFlags).toEqual([]);
+
+      incentiveOverrides.set('aid', {
+        incentives12mUsd: 9_000_000,
+        sourceUrl: 'https://official.example/incentives',
+        asOf: NOW,
+        coingeckoId: 'aid',
+        ticker: 'AID',
+        origin: 'manual',
+        createdAt: NOW,
+      });
+
+      // Ввод вселенной не менялся: компоненты переиспользуются целиком.
+      const second = await service.run();
+      expect(second.reuse.components.tokenomics.status).toBe('reused');
+      const afterOverride = (runs.at(-1) as EvaluationRun).candidates[0];
+      expect(afterOverride.riskFlags).toHaveLength(1);
+      expect(afterOverride.riskFlags[0].id).toBe('negative_after_incentives');
+    });
   });
 });

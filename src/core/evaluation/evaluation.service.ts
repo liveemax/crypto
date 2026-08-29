@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { BUILTIN_PROFILES, DEFAULT_PROFILE, getProfile } from '../../config/profiles';
+import { ManualService } from '../manual/manual.service';
 import { add, div, round } from '../money';
 import { StoreService } from '../store/store.service';
 import { businessScalePositions } from '../universe/alpha';
@@ -9,6 +10,7 @@ import { UniverseService } from '../universe/universe.service';
 import type { CandidateView, UniverseView } from '../universe/universe.types';
 import { evaluateSectorPosition } from './sector-position';
 import { BUSINESS_SCALE_FORMULA_VERSION, NOT_EVALUATED } from './evaluation.constants';
+import { riskFlagsOf } from './risk-flags';
 import { evaluateTokenomics } from './tokenomics-block';
 import { valuationPositions } from './valuation';
 import { inputHashes } from './evaluation.hash';
@@ -37,6 +39,7 @@ export class EvaluationService {
   constructor(
     private readonly store: StoreService,
     private readonly universe: UniverseService,
+    private readonly manual: ManualService,
   ) {}
 
   /**
@@ -145,6 +148,11 @@ export class EvaluationService {
     const reused = { valuation: 0, tokenomics: 0, sectorPosition: 0 };
     const recomputed = { valuation: 0, tokenomics: 0, sectorPosition: 0 };
 
+    // Ручные override читаются локально из файла, не из сети, и не участвуют в
+    // inputHashes: свежий override обязан отражаться в риск-флагах на следующем
+    // прогоне, поэтому флаги считаются заново каждый раз, а не переиспользуются.
+    const incentiveOverrides = await this.manual.incentiveOverridesByCoingeckoId();
+
     const candidates: CandidateEvaluation[] = selection.map((candidate) => {
       const old = before.get(candidate.coingeckoId);
       const reusable = old !== undefined;
@@ -175,6 +183,8 @@ export class EvaluationService {
         recomputed.sectorPosition += 1;
       }
 
+      const risk = riskFlagsOf(candidate, incentiveOverrides.get(candidate.coingeckoId) ?? null);
+
       return {
         coingeckoId: candidate.coingeckoId,
         ticker: candidate.ticker,
@@ -185,6 +195,9 @@ export class EvaluationService {
         tokenomics,
         sectorPosition,
         notEvaluated: NOT_EVALUATED,
+        riskFlags: risk.flags,
+        flagPenalty: risk.penalty,
+        riskMissing: risk.missing,
       };
     });
 

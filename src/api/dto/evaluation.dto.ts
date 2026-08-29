@@ -88,6 +88,21 @@ export class EvaluationBlockDto {
   @ApiProperty({ example: 'Все пороги профиля пройдены.' }) notes!: string;
 }
 
+export class NotEvaluatedComponentDto {
+  @ApiProperty({ example: 'mechanism', description: 'Компонент композита, у которого нет score' })
+  id!: string;
+  @ApiProperty({
+    example: 'Механизм возврата ценности требует чтения документации протокола',
+  })
+  why!: string;
+  @ApiProperty({
+    type: [String],
+    example: ['holdersRevenue12mUsd', 'payoutRatioPct', 'holderYieldPct'],
+    description: 'Измеренные факты рядом, вместо догадки о неизмеренном компоненте',
+  })
+  whatWeMeasureInstead!: string[];
+}
+
 export class CandidateEvaluationDto {
   @ApiProperty({ example: 'aave' }) coingeckoId!: string;
   @ApiProperty({ example: 'AAVE' }) ticker!: string;
@@ -98,6 +113,12 @@ export class CandidateEvaluationDto {
   @ApiProperty({ type: EvaluationBlockDto }) valuation!: EvaluationBlockDto;
   @ApiProperty({ type: EvaluationBlockDto }) tokenomics!: EvaluationBlockDto;
   @ApiProperty({ type: EvaluationBlockDto }) sectorPosition!: EvaluationBlockDto;
+  @ApiProperty({
+    type: NotEvaluatedComponentDto,
+    isArray: true,
+    description: 'Компоненты композита без score: не ноль, а явная причина',
+  })
+  notEvaluated!: NotEvaluatedComponentDto[];
 }
 
 export class EvaluationContextDto {
@@ -142,6 +163,8 @@ export class EvaluationSummaryRowDto {
   dataQuality!: Record<string, number>;
   @ApiProperty({ example: false }) hardFilterFail!: boolean;
   @ApiProperty({ type: [String], example: ['unlock12mPct'] }) missing!: string[];
+  @ApiProperty({ type: NotEvaluatedComponentDto, isArray: true })
+  notEvaluated!: NotEvaluatedComponentDto[];
 }
 
 export class EvaluationListResponseDto {
@@ -153,6 +176,12 @@ export class EvaluationListResponseDto {
   formulaVersions!: EvaluationFormulaVersionsDto;
   @ApiProperty({ type: EvaluationSummaryDto, additionalProperties: true })
   summaries!: Record<string, EvaluationSummaryDto>;
+  @ApiProperty({
+    type: NotEvaluatedComponentDto,
+    isArray: true,
+    description: 'Один и тот же список у каждого прогона: продукт полностью кодовый',
+  })
+  notEvaluated!: NotEvaluatedComponentDto[];
   @ApiProperty({ type: PaginationDto }) pagination!: PaginationDto;
   @ApiProperty({
     type: EvaluationSummaryRowDto,

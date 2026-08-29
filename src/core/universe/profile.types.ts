@@ -1,4 +1,4 @@
-import type { EvaluationComponentName } from '../evaluation/evaluation.types';
+import type { EvaluationComponentName, EvaluationWeights } from '../evaluation/evaluation.types';
 import type { Tier } from './universe.types';
 
 export const NUMERIC_FIELDS = [
@@ -87,7 +87,7 @@ export interface AnalysisProfile {
   thresholds: { minMcapUsd: number; minAnnualRevenueUsd: number; maxPRev: number };
   /** Кодовые оценки: считаются локально, без сети и без модели. */
   codeEvaluations: EvaluationComponentName[];
-  /** Ключи совпадают с именами кодовых компонентов посимвольно. */
-  weights: Record<string, number>;
+  /** Три точных ключа, сумма которых равна 1. Четвёртого ключа (mechanism) больше нет. */
+  weights: EvaluationWeights;
   tierCuts: { a: number; b: number; minDataQuality: number };
 }

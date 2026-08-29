@@ -12,6 +12,22 @@ export const EVALUATION_COMPONENTS: EvaluationComponentName[] = [
   'sectorPosition',
 ];
 
+/** Три точных ключа, сумма которых обязана равняться 1. Свободный Record сюда не годится. */
+export type EvaluationWeights = Record<EvaluationComponentName, number>;
+
+/** Единственный кодовый компонент, отложенный до появления корпуса и benchmark. */
+export type NotEvaluatedComponentId = 'mechanism';
+
+/**
+ * Явная замена вместо score:0 у компонента, которого нет. Карточка называет,
+ * что не посчитано, почему, и какие измеренные факты заменяют догадку.
+ */
+export interface NotEvaluatedComponent {
+  id: NotEvaluatedComponentId;
+  why: string;
+  whatWeMeasureInstead: string[];
+}
+
 /**
  * Проверка порога и тот, кто её уже применил. Без appliedBy поле бессмысленно:
  * при включённом deep-value проверки тривиально пройдены, потому что screen
@@ -48,6 +64,8 @@ export interface CandidateEvaluation {
   valuation: EvaluationBlock;
   tokenomics: EvaluationBlock;
   sectorPosition: EvaluationBlock;
+  /** Компоненты композита, которых у этой карточки нет и не будет score:0. */
+  notEvaluated: NotEvaluatedComponent[];
 }
 
 export interface EvaluationSummary {
@@ -86,6 +104,8 @@ export interface EvaluationRun {
   dataGapCount: number;
   warnings: string[];
   summaries: Record<EvaluationComponentName, EvaluationSummary>;
+  /** Один и тот же список у каждого прогона: LLM не вызывается ни для одной карточки. */
+  notEvaluated: NotEvaluatedComponent[];
   candidates: CandidateEvaluation[];
 }
 
@@ -129,6 +149,7 @@ export interface EvaluationSummaryRow {
   dataQuality: Record<EvaluationComponentName, number>;
   hardFilterFail: boolean;
   missing: string[];
+  notEvaluated: NotEvaluatedComponent[];
 }
 
 export interface EvaluationListResponse {
@@ -138,6 +159,7 @@ export interface EvaluationListResponse {
   evaluationProfileId: string;
   formulaVersions: EvaluationFormulaVersions;
   summaries: Record<EvaluationComponentName, EvaluationSummary>;
+  notEvaluated: NotEvaluatedComponent[];
   pagination: PaginationInfo;
   items: (CandidateEvaluation | EvaluationSummaryRow)[];
 }

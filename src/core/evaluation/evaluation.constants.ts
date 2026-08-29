@@ -2,6 +2,20 @@ import type { Metric } from '../types';
 import type { AlphaConfig, NumericField } from '../universe/profile.types';
 import type { UniverseCandidate } from '../universe/universe.types';
 import { metric } from '../validate/validate.service';
+import type { NotEvaluatedComponent } from './evaluation.types';
+
+/**
+ * Единственный отложенный компонент композита. Один и тот же список едет в
+ * каждый прогон и каждую карточку — ни сети, ни модели он не требует, потому
+ * что ничего не считает, а только называет причину и факты-заменители.
+ */
+export const NOT_EVALUATED: NotEvaluatedComponent[] = [
+  {
+    id: 'mechanism',
+    why: 'Механизм возврата ценности требует чтения документации протокола',
+    whatWeMeasureInstead: ['holdersRevenue12mUsd', 'payoutRatioPct', 'holderYieldPct'],
+  },
+];
 
 /** Границы разводнения за 12 месяцев: low ниже 5%, high выше 15%. */
 export const DILUTION_RISK = { low: 5, high: 15 } as const;

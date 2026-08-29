@@ -84,8 +84,10 @@ function positionGroup(members: UniverseCandidate[], profile: AnalysisProfile): 
     const hasPrimary = availableMetrics.includes('pRev') || availableMetrics.includes('fdvRev');
     const gate = hasPrimary && availableMetrics.length >= profile.valuation.minScoreMetrics &&
       availableWeight >= profile.valuation.minAvailableWeight;
-    const weighted = profile.valuation.rankBy.reduce((sum, axis) =>
-      add(sum, mul(percentiles[axis.field] ?? 0, axis.weight)), 0);
+    const weighted = profile.valuation.rankBy.reduce((sum, axis) => {
+      const percentile = percentiles[axis.field];
+      return percentile === null ? sum : add(sum, mul(percentile, axis.weight));
+    }, 0);
     return { ...base, percentiles, availableMetrics, missingMetrics, availableWeight,
       score: gate ? round(div(weighted, availableWeight), 1) : null };
   });

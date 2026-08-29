@@ -91,6 +91,7 @@ const UNITS: Record<NumericField, string> = {
   payoutRatioPct: '%',
   pRev: 'x',
   pFees: 'x',
+  fdvRev: 'x',
   revenuePerTvlPct: '%',
   tvlUsd: 'USD',
   overhangPct: '%',

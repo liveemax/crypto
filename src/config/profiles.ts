@@ -91,6 +91,20 @@ const DEFAULT_ALPHA: AnalysisProfile['alpha'] = {
  */
 const DEEP_VALUE_ALPHA: AnalysisProfile['alpha'] = DEFAULT_ALPHA;
 
+const VALUATION: AnalysisProfile['valuation'] = {
+  rankBy: [
+    { field: 'pRev', direction: 'lower_better', weight: 0.4 },
+    { field: 'pFees', direction: 'lower_better', weight: 0.2 },
+    { field: 'fdvRev', direction: 'lower_better', weight: 0.2 },
+    { field: 'holderYieldPct', direction: 'higher_better', weight: 0.1 },
+    { field: 'revenuePerTvlPct', direction: 'higher_better', weight: 0.1 },
+  ],
+  minRankedValues: 3,
+  minScoreMetrics: 2,
+  minAvailableWeight: 0.6,
+  formulaVersion: 'sector-valuation-v1',
+};
+
 const CODE_EVALUATIONS: EvaluationComponentName[] = [
   'valuation',
   'tokenomics',
@@ -111,6 +125,7 @@ export const DEFAULT_PROFILE = {
   rationale: 'Повторяет шлак-фильтр исходной вселенной без оценочных порогов.',
   screen: BASE_SCREEN,
   alpha: DEFAULT_ALPHA,
+  valuation: VALUATION,
   thresholds: THRESHOLDS,
   codeEvaluations: CODE_EVALUATIONS,
   weights: WEIGHTS,

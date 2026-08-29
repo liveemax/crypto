@@ -57,6 +57,7 @@ export function inputHashes(input: HashInput): EvaluationInputHashes {
     builtAt: input.builtAt,
     profileId: input.profile.id,
     thresholds: input.profile.thresholds,
+    valuation: input.profile.valuation,
     facts,
   });
 

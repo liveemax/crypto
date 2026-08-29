@@ -59,6 +59,26 @@ export class RankMetricDto {
   direction!: string;
 }
 
+export class ValuationRankMetricDto extends RankMetricDto {
+  @ApiProperty({ example: 0.4, description: 'Явный вес оси; порядок массива весом не считается' })
+  @IsNumber()
+  @Min(0)
+  weight!: number;
+}
+
+export class ValuationConfigDto {
+  @ApiProperty({ type: ValuationRankMetricDto, isArray: true })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ValuationRankMetricDto)
+  rankBy!: ValuationRankMetricDto[];
+
+  @ApiProperty({ example: 3 }) @IsInt() @Min(3) minRankedValues!: number;
+  @ApiProperty({ example: 2 }) @IsInt() @Min(2) minScoreMetrics!: number;
+  @ApiProperty({ example: 0.6 }) @IsNumber() @Min(0) @Max(1) minAvailableWeight!: number;
+  @ApiProperty({ example: 'sector-valuation-v1' }) @IsString() formulaVersion!: string;
+}
+
 export class AlphaConfigDto {
   @ApiProperty({
     example: 5,
@@ -122,6 +142,11 @@ export class AnalysisProfileDto {
   @ValidateNested()
   @Type(() => AlphaConfigDto)
   alpha!: AlphaConfigDto;
+
+  @ApiProperty({ type: ValuationConfigDto })
+  @ValidateNested()
+  @Type(() => ValuationConfigDto)
+  valuation!: ValuationConfigDto;
 
   @ApiProperty({ type: ProfileThresholdsDto })
   @ValidateNested()

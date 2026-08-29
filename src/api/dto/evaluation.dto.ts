@@ -76,7 +76,7 @@ export class EvaluationCheckDto {
 export class EvaluationBlockDto {
   @ApiProperty({ enum: ['valuation', 'tokenomics', 'sectorPosition'] })
   component!: string;
-  @ApiProperty({ example: 'Дешевизна и базовые пороги' }) title!: string;
+  @ApiProperty({ example: 'Секторная оценка цены относительно бизнеса' }) title!: string;
   @ApiProperty({ type: 'object', additionalProperties: true }) verdict!: Record<string, unknown>;
   @ApiProperty({ nullable: true, example: 69.2, description: 'null — данных не хватило, это не ноль' })
   score!: number | null;

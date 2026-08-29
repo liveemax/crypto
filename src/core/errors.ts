@@ -22,6 +22,7 @@ export const NEXT: Record<string, NextAction> = {
   collectTokenomics: { method: 'POST', path: '/universe/tokenomics', body: {} },
   runEvaluation: { method: 'POST', path: '/evaluation/run', body: {} },
   latestEvaluation: { method: 'GET', path: '/evaluation/latest', body: {} },
+  runRanking: { method: 'POST', path: '/ranking/run', body: {} },
   status: { method: 'GET', path: '/status', body: {} },
   profiles: { method: 'GET', path: '/config/profiles', body: {} },
   swagger: { method: 'GET', path: '/api', body: {} },

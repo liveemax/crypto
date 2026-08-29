@@ -5,6 +5,7 @@ import { AppConfigModule } from './config/config.module';
 import { ApiExceptionFilter } from './api/http/api-exception.filter';
 import { EvaluationModule } from './core/evaluation/evaluation.module';
 import { ManualModule } from './core/manual/manual.module';
+import { RankingModule } from './core/ranking/ranking.module';
 import { SystemModule } from './core/system/system.module';
 import { TokenomicsModule } from './core/tokenomics/tokenomics.module';
 import { UniverseModule } from './core/universe/universe.module';
@@ -22,6 +23,7 @@ import { JobsModule } from './core/jobs/jobs.module';
     ManualModule,
     TokenomicsModule,
     EvaluationModule,
+    RankingModule,
     // Последним намеренно: его GET /universe/{token} обязан регистрироваться
     // после литеральных маршрутов UniverseController, иначе :token перехватит
     // /universe/status, /universe/funnel, /universe/coverage и /universe/data-gaps.

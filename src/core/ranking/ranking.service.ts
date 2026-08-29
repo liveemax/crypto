@@ -1,11 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { resolveProfile } from '../../config/profiles';
+import { conflict, NEXT } from '../errors';
+import { paginate } from '../envelope';
 import { EvaluationService } from '../evaluation/evaluation.service';
 import type { EvaluationRun } from '../evaluation/evaluation.types';
 import { StoreService } from '../store/store.service';
 import { rankCandidate } from './ranking.candidate';
 import { RANKING_FORMULA_VERSION } from './ranking.constants';
-import type { RankedCandidate, RankingRun, RankingRunRequest, RankTier } from './ranking.types';
+import { rankingSummaryRow } from './ranking.summary';
+import type {
+  RankedCandidate,
+  RankingListQuery,
+  RankingListResponse,
+  RankingRun,
+  RankingRunRequest,
+  RankingRunResponse,
+  RankTier,
+} from './ranking.types';
 
 const STORE_KIND = 'rankings';
 const EMPTY_TIERS: Record<RankTier, number> = { A: 0, B: 0, C: 0, watchlist: 0 };
@@ -49,6 +60,56 @@ export class RankingService {
 
     await this.store.saveRun(STORE_KIND, rankingRun.runId, rankingRun);
     return rankingRun;
+  }
+
+  /**
+   * HTTP-обёртка над run(): тот же прогон, но ответ POST /ranking/run — страница,
+   * а не сотни карточек разом. run() остаётся полным ради внутренних потребителей
+   * и тестов, которым нужны все кандидаты без пагинации.
+   */
+  async runPaged(request: RankingRunRequest = {}): Promise<RankingRunResponse> {
+    const run = await this.run(request);
+    return {
+      ...this.envelope(run, {}),
+      evaluationRunId: run.evaluationRunId,
+      evaluationRecomputed: run.evaluationRecomputed,
+      candidateCount: run.candidateCount,
+      inputHashes: run.inputHashes,
+    };
+  }
+
+  /** Последний сохранённый ranking run страницами; расчёта не запускает. */
+  async list(query: RankingListQuery = {}): Promise<RankingListResponse> {
+    const run = await this.store.loadRun<RankingRun>(STORE_KIND);
+    if (run === null) {
+      throw conflict(
+        'ranking_missing',
+        'Рейтинга ещё не было ни разу.',
+        { expected: 'ranking run', actual: null },
+        NEXT.runRanking,
+      );
+    }
+    return this.envelope(run, query);
+  }
+
+  private envelope(run: RankingRun, query: RankingListQuery): RankingListResponse {
+    const { page, pagination } = paginate(run.candidates, query);
+    return {
+      context: {
+        universeVersion: run.universeVersion,
+        builtAt: run.builtAt,
+        activeFilters: run.activeFilters,
+        asOf: run.createdAt,
+      },
+      runId: run.runId,
+      createdAt: run.createdAt,
+      rankingProfileId: run.rankingProfileId,
+      formulaVersions: run.formulaVersions,
+      tiers: run.tiers,
+      notEvaluated: run.notEvaluated,
+      pagination,
+      items: query.view === 'full' ? page : page.map(rankingSummaryRow),
+    };
   }
 
   /**

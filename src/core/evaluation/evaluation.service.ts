@@ -39,6 +39,51 @@ export class EvaluationService {
     private readonly universe: UniverseService,
   ) {}
 
+  /**
+   * Совместим ли сохранённый прогон с текущей выборкой — покомпонентно.
+   * Считается здесь, а не в GET /status: вторая копия правил совместимости
+   * разъедется с первой на первой же правке хеша, и разъедется молча.
+   */
+  async compatibility(): Promise<{
+    runId: string;
+    createdAt: string;
+    evaluationProfileId: string;
+    evaluatedCount: number;
+    compatible: { perToken: boolean; comparative: boolean };
+  } | null> {
+    const previous = await this.store.loadRun<EvaluationRun>(STORE_KIND);
+    if (previous === null) return null;
+
+    const profile = this.resolveProfile(previous.evaluationProfileId);
+    const view = await this.universe.view();
+    const selection = view.candidates.filter((candidate) => candidate.passed);
+    const alphaOn = view.activeFilters.alpha.enabled && view.activeFilters.alpha.config !== null;
+    const rankBy: AlphaConfig = alphaOn
+      ? (view.activeFilters.alpha.config as AlphaConfig)
+      : profile.alpha;
+
+    const hashes = inputHashes({
+      universeVersion: view.universeVersion,
+      builtAt: view.builtAt,
+      profile,
+      universe: view.candidates,
+      selection,
+      activeFilters: view.activeFilters,
+      rankBy,
+    });
+
+    return {
+      runId: previous.runId,
+      createdAt: previous.createdAt,
+      evaluationProfileId: previous.evaluationProfileId,
+      evaluatedCount: previous.evaluatedCount,
+      compatible: {
+        perToken: previous.inputHashes.perToken === hashes.perToken,
+        comparative: previous.inputHashes.comparative === hashes.comparative,
+      },
+    };
+  }
+
   /** Оценивает всю текущую выборку одним проходом: ни сети, ни слота задачи. */
   async run(request: EvaluationRunRequest = {}): Promise<EvaluationRunResponse> {
     const profile = this.resolveProfile(request.profileId);

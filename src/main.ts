@@ -7,6 +7,13 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
+  // Список источников — через .env: правка кода ради адреса фронтенда это дефект.
+  const origins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+  if (origins.length > 0) app.enableCors({ origin: origins });
+
   const config = new DocumentBuilder()
     .setTitle('Crypto Agents')
     .setDescription(
@@ -15,18 +22,24 @@ async function bootstrap(): Promise<void> {
         'Каждое число снабжено ссылкой на источник и датой актуальности.',
     )
     .setVersion('1.0')
-    .addTag('system', 'Служебное')
-    .addTag('config', 'Вселенная токенов и настройки')
-    .addTag('snapshot', 'Слой данных')
-    .addTag('agents', 'Агенты — по одному на токен')
+    .addTag('system', 'Состояние системы: что идёт и что делать дальше')
+    .addTag('universe', 'Состав, числа, отбор и объяснение по одному токену')
+    .addTag('evaluation', 'Кодовая оценка: valuation, tokenomics, sectorPosition')
     .addTag('manual', 'Ручные вводы: разлоки, документация, оверрайды')
-    .addTag('ranking', 'Полный прогон и рейтинг')
+    .addTag('config', 'Профили, пороги и веса')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: { tryItOutEnabled: true, persistAuthorization: true },
   });
+
+  // Спецификация отдельным файлом: клиент сайта генерируется из неё, а не из догадок.
+  app
+    .getHttpAdapter()
+    .get('/api/openapi.json', (_request: unknown, response: { json: (body: unknown) => void }) => {
+      response.json(document);
+    });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

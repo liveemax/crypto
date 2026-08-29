@@ -1,5 +1,14 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DISCOVERY } from '../../config/discovery';
+import { badRequest, NEXT, notFound } from '../errors';
+import { paginate } from '../envelope';
+import type { Envelope, ResponseContext } from '../envelope.types';
+import { collectDataGaps } from './data-gaps';
+import { comparator } from './sort';
+import { summaryOf } from './summary';
+import type { UniverseSummaryRow } from './summary';
+import type { DataGapQuery, DataGapRow } from './data-gaps.types';
+import type { UniverseListQuery } from './universe.types';
 import { EMPTY_TOKENOMICS, TOKENOMICS_SNAPSHOT } from '../tokenomics/tokenomics.constants';
 import { applyTokenomics, overhangPctOf } from '../tokenomics/tokenomics.calc';
 import { DEFAULT_PROFILE, getProfile } from '../../config/profiles';
@@ -43,32 +52,13 @@ import type { TokenomicsSnapshot } from '../tokenomics/tokenomics.types';
 const SNAPSHOT_NAME = 'universe-source';
 const DAY_MS = 86_400_000;
 
-/** Пустой счётчик: состояние покоя. */
-function idleProgress(): UniverseProgress {
-  return {
-    step: 'idle',
-    label: 'Ожидание',
-    current: 0,
-    total: 0,
-    percent: 0,
-    loaded: 0,
-    failures: 0,
-    lastError: null,
-    startedAt: null,
-    elapsedSec: 0,
-    etaSec: null,
-  };
-}
-
 @Injectable()
 export class UniverseService {
-  private readonly logger = new Logger(UniverseService.name);
-  private state: UniverseStatus['state'] = 'idle';
-  private progress: UniverseProgress = idleProgress();
-  private lastError: string | null = null;
+  /**
+   * Своего состояния задачи здесь нет намеренно: два владельца означают, что
+   * чужая задача видна как idle. Прогресс целиком принадлежит JobService.
+   */
   private inFlight: Promise<void> | null = null;
-  private startedAtMs = 0;
-  private failures = 0;
   constructor(
     private readonly store: StoreService,
     private readonly builder: UniverseBuilder,
@@ -177,36 +167,20 @@ export class UniverseService {
     }
     await this.requireLatest();
 
-    if (!this.jobs.tryAcquire('universe/prices')) {
+    if (!this.jobs.begin('universe/prices', 'prices', 'Цены, выручка и TVL')) {
       return {
         started: false,
         reason: 'already_running',
         ageDays,
-        message: 'Слот занят другой задачей. Проверьте GET /universe/status',
+        message: 'Слот занят другой задачей. Проверьте GET /status',
       };
     }
-    this.state = 'running';
-    this.lastError = null;
-    this.failures = 0;
-    this.startedAtMs = Date.now();
-    this.progress = {
-      ...idleProgress(),
-      step: 'prices',
-      label: 'Старт обновления чисел',
-      startedAt: new Date().toISOString(),
-    };
 
-    this.inFlight = this.rerunPrices().catch((error: unknown) => {
-      this.state = 'error';
-      this.lastError = error instanceof Error ? error.message : String(error);
-      this.progress = {
-        ...this.progress,
-        step: 'failed',
-        label: 'Прервано',
-        lastError: this.lastError,
-      };
-      this.logger.error(`Обновление чисел прервано: ${this.lastError}`);
-    }).finally(() => this.jobs.release('universe/prices'));
+    this.inFlight = this.rerunPrices()
+      .catch((error: unknown) => {
+        this.jobs.fail(error);
+      })
+      .finally(() => this.jobs.release('universe/prices'));
 
     return {
       started: true,
@@ -214,7 +188,7 @@ export class UniverseService {
       ageDays,
       message:
         'Обновление чисел запущено в фоне: около 9 запросов и до минуты работы. ' +
-        'Ход — в GET /universe/status, результат — в POST /universe/screen',
+        'Ход — в GET /status, результат — в POST /universe/screen',
     };
   }
 
@@ -262,16 +236,7 @@ export class UniverseService {
     });
     await this.store.saveSnapshot(SNAPSHOT_NAME, refreshed);
 
-    this.state = 'idle';
-    this.progress = this.withElapsed({
-      ...this.progress,
-      step: 'done',
-      label: `Числа обновлены: ${refreshed.candidates.length} строк`,
-      current: 1,
-      total: 1,
-      percent: 100,
-    });
-    this.logger.log(this.progress.label);
+    this.jobs.succeed(`Числа обновлены: ${refreshed.candidates.length} строк`);
   }
 
   /** Пересобирает состав вселенной, если он старше месяца; работа идёт в фоне. */
@@ -305,37 +270,26 @@ export class UniverseService {
     }
 
     const reason = options.force ? 'forced' : ageDays === null ? 'never_built' : 'stale';
-    if (!this.jobs.tryAcquire('universe/refresh')) {
+    if (!this.jobs.begin('universe/refresh', 'markets', 'Состав вселенной')) {
       return {
         started: false,
         reason: 'already_running',
         ageDays,
-        message: 'Слот занят другой задачей. Проверьте GET /universe/status',
+        message: 'Слот занят другой задачей. Проверьте GET /status',
       };
     }
-    this.state = 'running';
-    this.lastError = null;
-    this.failures = 0;
-    this.startedAtMs = Date.now();
-    this.progress = {
-      ...idleProgress(),
-      step: 'markets',
-      label: 'Старт',
-      startedAt: new Date().toISOString(),
-    };
 
-    this.inFlight = this.rebuild(options.topN).catch((error: unknown) => {
-      this.state = 'error';
-      this.lastError = error instanceof Error ? error.message : String(error);
-      this.progress = { ...this.progress, step: 'failed', label: 'Прервано', lastError: this.lastError };
-      this.logger.error(`Пересборка вселенной прервана: ${this.lastError}`);
-    }).finally(() => this.jobs.release('universe/refresh'));
+    this.inFlight = this.rebuild(options.topN)
+      .catch((error: unknown) => {
+        this.jobs.fail(error);
+      })
+      .finally(() => this.jobs.release('universe/refresh'));
 
     return {
       started: true,
       reason,
       ageDays,
-      message: 'Пересборка запущена в фоне. Счётчик — в GET /universe/status',
+      message: 'Пересборка запущена в фоне: около 25 запросов и 3–5 минут. Ход — в GET /status',
     };
   }
 
@@ -367,49 +321,19 @@ export class UniverseService {
           'одна сетевая задача: лимит источников общий на процесс',
       };
     }
-    if (!this.jobs.tryAcquire(name)) {
+    if (!this.jobs.begin(name, step, label)) {
       return {
         started: false,
         reason: 'already_running',
         ageDays,
-        message: 'Слот занят другой задачей. Проверьте GET /universe/status',
+        message: 'Слот занят другой задачей. Проверьте GET /status',
       };
     }
 
-    this.state = 'running';
-    this.lastError = null;
-    this.failures = 0;
-    this.startedAtMs = Date.now();
-    this.progress = {
-      ...idleProgress(),
-      step,
-      label: `Старт: ${label}`,
-      startedAt: new Date().toISOString(),
-    };
-
     this.inFlight = run((event) => this.report(event))
-      .then((done) => {
-        this.state = 'idle';
-        this.progress = this.withElapsed({
-          ...this.progress,
-          step: 'done',
-          label: done,
-          current: 1,
-          total: 1,
-          percent: 100,
-        });
-        this.logger.log(done);
-      })
+      .then((done) => this.jobs.succeed(done))
       .catch((error: unknown) => {
-        this.state = 'error';
-        this.lastError = error instanceof Error ? error.message : String(error);
-        this.progress = {
-          ...this.progress,
-          step: 'failed',
-          label: 'Прервано',
-          lastError: this.lastError,
-        };
-        this.logger.error(`${name} прервана: ${this.lastError}`);
+        this.jobs.fail(error);
       })
       .finally(() => this.jobs.release(name));
 
@@ -417,7 +341,7 @@ export class UniverseService {
       started: true,
       reason: 'forced',
       ageDays,
-      message: `${label}: задача запущена в фоне. Ход — в GET /universe/status`,
+      message: `${label}: задача запущена в фоне. Ход — в GET /status`,
     };
   }
 
@@ -447,10 +371,24 @@ export class UniverseService {
     const snapshot = await this.latest();
     const activeFilters = await this.filters.current();
     const view = snapshot ? this.compose(snapshot, activeFilters) : null;
+    // Прогресс читается у владельца состояния; 'done' наружу выглядит как покой.
+    const job = this.jobs.snapshot();
     return {
-      state: this.state,
-      progress: this.withElapsed(this.progress),
-      error: this.lastError,
+      state: job.state === 'running' ? 'running' : job.state === 'error' ? 'error' : 'idle',
+      progress: {
+        step: job.step,
+        label: job.label,
+        current: job.current,
+        total: job.total,
+        percent: job.percent,
+        loaded: job.loaded,
+        failures: job.failures,
+        lastError: job.lastError,
+        startedAt: job.startedAt,
+        elapsedSec: job.elapsedSec,
+        etaSec: job.etaSec,
+      },
+      error: job.lastError,
       version: snapshot?.version ?? null,
       ageDays: await this.ageDays(),
       total: snapshot?.candidates.length ?? null,
@@ -504,63 +442,24 @@ export class UniverseService {
     });
     await this.store.saveSnapshot(SNAPSHOT_NAME, snapshot);
 
-    this.state = 'idle';
-    this.progress = this.withElapsed({
-      ...this.progress,
-      step: 'done',
-      label: `Готово: ${funnel.passed} из ${funnel.total}, с доходностью ${funnel.tiers.yield}`,
-      current: 1,
-      total: 1,
-      percent: 100,
-    });
-    this.logger.log(this.progress.label);
+    this.jobs.succeed(
+      `Готово: ${funnel.passed} из ${funnel.total}, с доходностью ${funnel.tiers.yield}`,
+    );
   }
 
-  /** Обновляет счётчик и пишет строку лога с номером шага и остатком времени. */
+  /** Счётчик и строка лога принадлежат JobService: владелец состояния задачи один. */
   private report(event: BuildProgressEvent): void {
-    if (event.failed) this.failures += 1;
-
-    const percent = event.total > 0 ? Math.round((event.current / event.total) * 100) : 0;
-    this.progress = this.withElapsed({
-      step: event.step,
-      label: event.label,
-      current: event.current,
-      total: event.total,
-      percent,
-      loaded: event.loaded,
-      failures: this.failures,
-      lastError: event.error ?? this.progress.lastError,
-      startedAt: this.progress.startedAt,
-      elapsedSec: 0,
-      etaSec: null,
-    });
-
-    const counter = event.total > 1 ? ` ${event.current}/${event.total}` : '';
-    const eta = this.progress.etaSec === null ? '' : ` · осталось ~${this.progress.etaSec} с`;
-    const line =
-      `${event.label}${counter} · строк ${event.loaded} · ошибок ${this.failures}` +
-      ` · прошло ${this.progress.elapsedSec} с${eta}`;
-
-    if (event.failed) this.logger.warn(`${line} · ${event.error ?? 'ошибка'}`);
-    else this.logger.log(line);
-  }
-
-  /** Досчитывает прошедшее время и остаток по темпу текущего шага. */
-  private withElapsed(progress: UniverseProgress): UniverseProgress {
-    const elapsedSec =
-      this.startedAtMs === 0 ? 0 : Math.round((Date.now() - this.startedAtMs) / 1_000);
-    const etaSec =
-      progress.current > 0 && progress.total > progress.current && elapsedSec > 0
-        ? Math.round((elapsedSec / progress.current) * (progress.total - progress.current))
-        : null;
-    return { ...progress, elapsedSec, etaSec };
+    this.jobs.report(event);
   }
 
   private async requireLatest(): Promise<UniverseSnapshot> {
     const snapshot = await this.latest();
     if (!snapshot) {
-      throw new NotFoundException(
-        'Вселенная ещё не собрана. Вызовите POST /universe/refresh',
+      throw notFound(
+        'universe_missing',
+        'Состав вселенной ещё не собран: показывать нечего.',
+        { expected: 'universe snapshot', actual: null },
+        NEXT.buildUniverse,
       );
     }
     return snapshot;
@@ -604,8 +503,11 @@ export class UniverseService {
   private requireBuiltin(id: string): AnalysisProfile {
     const profile = getProfile(id.trim());
     if (!profile) {
-      throw new BadRequestException(
-        `Неизвестный profileId: ${id}. Доступные профили: default, yield-hunter, deep-value`,
+      throw badRequest(
+        'profile_unknown',
+        `Неизвестный profileId: ${id}.`,
+        { requested: id, available: ['default', 'yield-hunter', 'deep-value'] },
+        NEXT.profiles,
       );
     }
     return profile;
@@ -624,6 +526,56 @@ export class UniverseService {
   async view(): Promise<UniverseView> {
     const snapshot = await this.requireLatest();
     return this.compose(snapshot, await this.filters.current());
+  }
+
+  /** Происхождение любого списка: снимок, композиция фильтров и время ответа. */
+  contextOf(view: UniverseView): ResponseContext {
+    return {
+      universeVersion: view.universeVersion,
+      builtAt: view.builtAt,
+      activeFilters: view.activeFilters,
+      asOf: new Date().toISOString(),
+    };
+  }
+
+  /** Список кандидатов страницами и в конверте: голый массив не объясняет происхождение. */
+  async list(
+    query: UniverseListQuery = {},
+  ): Promise<Envelope<CandidateView | UniverseSummaryRow>> {
+    const view = await this.view();
+    const passedOnly = query.passedOnly ?? true;
+    const sector = query.sector?.trim().toLowerCase();
+    const rows = view.candidates
+      .filter((item) => (passedOnly ? item.passed : true))
+      .filter((item) => (query.tier ? item.tier === query.tier : true))
+      .filter((item) => (sector ? item.sector === sector : true))
+      .sort(comparator(query.sort ?? 'rank'));
+
+    const { page, pagination } = paginate(rows, query);
+    // Полная строка едет в браузер только по явному запросу: перцентили и peers
+    // читают, когда разбирают один токен, а не когда листают список.
+    const items = query.view === 'full' ? page : page.map(summaryOf);
+    return { context: this.contextOf(view), pagination, items };
+  }
+
+  /** Типизированная очередь пробелов: что мешает посчитать числа и по каким токенам. */
+  async dataGaps(query: DataGapQuery = {}): Promise<Envelope<DataGapRow>> {
+    const view = await this.view();
+    const rows = collectDataGaps(view.candidates, query);
+    const { page, pagination } = paginate(rows, query);
+    return { context: this.contextOf(view), pagination, items: page };
+  }
+
+  /**
+   * Кандидаты по тикеру или coingeckoId. Совпадение по идентификатору сильнее:
+   * тикер не идентификатор, и один символ у двух активов — законная ситуация.
+   */
+  async resolve(token: string): Promise<{ view: UniverseView; matches: CandidateView[] }> {
+    const view = await this.view();
+    const needle = token.trim().toLowerCase();
+    const byId = view.candidates.filter((item) => item.coingeckoId.toLowerCase() === needle);
+    if (byId.length > 0) return { view, matches: byId };
+    return { view, matches: view.candidates.filter((item) => item.ticker.toLowerCase() === needle) };
   }
 
   /**

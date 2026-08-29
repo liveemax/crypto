@@ -1,26 +1,28 @@
-import { Body, Controller, Get, NotFoundException, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   UniverseCompareResponseDto,
-  FunnelReportDto,
   RefreshUniverseDto,
   RefreshUniverseResponseDto,
-  UniverseCandidateDto,
   UniverseQueryDto,
   ScreenApplyResponseDto,
   UniverseStatusDto,
   FunnelViewDto,
 } from './universe.dto';
+import { UniverseListResponseDto } from './list.dto';
+import type { UniverseSummaryRow } from './summary';
+import { DataGapListResponseDto, DataGapQueryDto } from './data-gaps.dto';
 import { ScreenSelectionDto } from './filter-state.dto';
 import { AlphaSelectionDto } from './alpha.dto';
 import { CoverageReportDto } from './coverage.dto';
 import { AlphaApplyResponseDto } from './universe.dto';
 import { CompareUniverseDto } from './profile.dto';
 import { UniverseService } from './universe.service';
-import { ProfileReference, UniverseCandidate } from './universe.types';
+import { ProfileReference, UniverseListQuery } from './universe.types';
+import type { CandidateView } from './universe.types';
+import type { DataGapRow } from './data-gaps.types';
+import type { Envelope } from '../envelope.types';
 import type { AlphaSelectionRequest, ScreenSelectionRequest } from './filter-state.types';
-
-type SortKey = 'rank' | 'holderYieldPct' | 'revenue12mUsd' | 'pRev';
 
 @ApiTags('universe')
 @Controller('universe')
@@ -33,8 +35,8 @@ export class UniverseController {
     description:
       'Определяет, кто вообще во вселенной: топ-1300 CoinGecko, склейка с протоколами ' +
       'и сетями DeFiLlama. Единственный эндпоинт, который тянет состав из интернета.\n\n' +
-      'Идёт в фоне 3–5 минут, ответ приходит сразу. Ход — в GET /universe/status: ' +
-      'ждите state=idle и step=done.\n\n' +
+      'Идёт в фоне 3–5 минут, ответ приходит сразу. Ход — в GET /status: ' +
+      'ждите state=done.\n\n' +
       'Без force пересборка запускается, только если состав старше месяца. ' +
       'Обновить цены по тому же составу дешевле — POST /universe/prices.',
   })
@@ -57,7 +59,7 @@ export class UniverseController {
       'Тянет свежий рынок CoinGecko и три сводки комиссий DeFiLlama по уже собранным ' +
       'монетам. Кто во вселенной, version и builtAt не меняются — меняются только числа.\n\n' +
       'Около 9 запросов и до минуты, поэтому работает в фоне: ответ приходит сразу, ' +
-      'ход — в GET /universe/status, результат — в POST /universe/screen.\n\n' +
+      'ход — в GET /status, результат — в POST /universe/screen.\n\n' +
       'Нужен, если состав собран вчера или раньше, а смотреть хочется на сегодняшние цены.',
   })
   @ApiOkResponse({ type: RefreshUniverseResponseDto })
@@ -76,9 +78,9 @@ export class UniverseController {
       'обратно тем же профилем можно телом {"enabled": true}.\n\n' +
       'При включении передавайте ЛИБО profileId готового профиля, ЛИБО полный profile ' +
       'для разового эксперимента. Оба сразу — ошибка, профиль при enabled: false — тоже.\n\n' +
-      'После вызова GET /universe/status, GET /universe/funnel и GET /universe ' +
-      'показывают результат всех включённых фильтров. Отдельного «разового взгляда» ' +
-      'больше нет: два ответа с разными числами по одному снимку — это баг, а не фича. ' +
+      'После вызова GET /status, GET /universe/funnel и GET /universe показывают ' +
+      'результат всех включённых фильтров. Отдельного «разового взгляда» больше нет: ' +
+      'два ответа с разными числами по одному снимку — это баг, а не фича. ' +
       'Сравнить два профиля, не трогая рабочее состояние, — POST /universe/compare.\n\n' +
       'Готовые профили и их гипотезы — в GET /config/profiles.',
   })
@@ -123,8 +125,8 @@ export class UniverseController {
       'Порядок вызовов не важен: считается всегда snapshot → screen → alpha.\n\n' +
       'Читайте decision у каждого отсеянного и sectors в ответе. Отсев по ' +
       'конкуренции (alpha_outranked) и отсев по дырам в данных (alpha_unrankable, ' +
-      'alpha_missing_sector) — разные вещи: второе едет в dataGaps и означает, что ' +
-      'система про токен ничего не знает, а не что он хуже конкурентов.\n\n' +
+      'alpha_missing_sector) — разные вещи: второе едет в GET /universe/data-gaps и ' +
+      'означает, что система про токен ничего не знает, а не что он хуже конкурентов.\n\n' +
       'enabled: false немедленно возвращает всех отсеянных альфой; screen при этом ' +
       'не выключается. В сеть не ходит, снимок не меняет.',
   })
@@ -132,7 +134,10 @@ export class UniverseController {
     type: AlphaSelectionDto,
     required: true,
     examples: {
-      on: { summary: 'Включить с конфигурацией профиля default', value: { enabled: true, profileId: 'default' } },
+      on: {
+        summary: 'Включить с конфигурацией профиля default',
+        value: { enabled: true, profileId: 'default' },
+      },
       narrow: {
         summary: 'Разовая конфигурация: по три на нишу',
         value: {
@@ -158,7 +163,7 @@ export class UniverseController {
     return this.universe.applyAlphaFilter(body as unknown as AlphaSelectionRequest);
   }
 
-  @Post('compare')  
+  @Post('compare')
   @ApiOperation({
     summary: 'Сравнить два профиля на одной вселенной',
     description:
@@ -170,9 +175,7 @@ export class UniverseController {
       '"deep-value". В сеть не ходит.',
   })
   @ApiOkResponse({ type: UniverseCompareResponseDto })
-  async compare(
-    @Body() body: CompareUniverseDto,
-  ): Promise<UniverseCompareResponseDto> {
+  async compare(@Body() body: CompareUniverseDto): Promise<UniverseCompareResponseDto> {
     return this.universe.compare(
       body.left as unknown as ProfileReference,
       body.right as unknown as ProfileReference,
@@ -181,14 +184,12 @@ export class UniverseController {
 
   @Get('status')
   @ApiOperation({
-    summary: 'Что сейчас происходит и что осталось после всех фильтров',
+    deprecated: true,
+    summary: 'Устаревший алиас раздела: используйте GET /status',
     description:
-      'state: idle — работы нет, running — идёт сборка или обновление чисел, ' +
-      'error — упало, причина в поле error. Проценты и остаток времени — в progress.\n\n' +
-      'passed и tiers считаются композицией включённых фильтров, она целиком в ' +
-      'activeFilters. Ни один не включён — passed равно total.\n\n' +
-      'activeFilters переживает перезапуск сервиса: состояние лежит в data/, а не ' +
-      'в памяти процесса.',
+      'Оставлен, чтобы не ломать существующие ссылки, и не расширяется. Единственный ' +
+      'источник прогресса — GET /status: он показывает задачу любого типа, свежесть ' +
+      'каждого слоя данных, активную выборку и следующее действие.',
   })
   @ApiOkResponse({ type: UniverseStatusDto })
   async status(): Promise<UniverseStatusDto> {
@@ -207,7 +208,7 @@ export class UniverseController {
       'подтверждён, это не пробел; mapping_failed — монета не склеена с протоколом; ' +
       'unsupported_business_model — сеть платит валидаторам, а не держателю, ей ' +
       'нужны свои метрики. Разные состояния чинятся по-разному.\n\n' +
-      'В сеть не ходит. Порог двигается только вниз.',
+      'Поимённая очередь этих пробелов — в GET /universe/data-gaps. В сеть не ходит.',
   })
   @ApiOkResponse({ type: CoverageReportDto })
   async coverage(): Promise<CoverageReportDto> {
@@ -236,47 +237,43 @@ export class UniverseController {
     };
   }
 
+  @Get('data-gaps')
+  @ApiOperation({
+    summary: 'Очередь пробелов: что мешает посчитать числа и по каким токенам',
+    description:
+      'Полный список строк, у которых не хватает данных, отсортированный по ' +
+      'капитализации: чинить нужно те, за которыми стоят деньги, а не те, что первыми ' +
+      'по алфавиту.\n\n' +
+      'known_zero сюда не попадает: подтверждённый ноль — измерение, а не задача. ' +
+      'У каждого пробела назван тип (mapping_failed, source_missing, source_error, ' +
+      'matched_unparsed, source_stale, unsupported_business_model) и то, чем он ' +
+      'закрывается: это очередь задач для адаптеров, а не рабочее место оператора.\n\n' +
+      'pagination.total всегда полный, даже когда страница короче: обрезанная очередь ' +
+      'выглядит короткой и создаёт ложное впечатление порядка.',
+  })
+  @ApiOkResponse({ type: DataGapListResponseDto })
+  async dataGaps(@Query() query: DataGapQueryDto): Promise<Envelope<DataGapRow>> {
+    return this.universe.dataGaps(query);
+  }
+
   @Get()
   @ApiOperation({
     summary: 'Список монет с числами, тирами и причинами отсева',
     description:
       'Каждая строка — посчитанные кодом числа со ссылкой на источник и временем ' +
       'обновления источника. По умолчанию только прошедшие рабочий отбор; ' +
-      'passedOnly=false покажет и отсеянных с полем rejectReason — почему именно.\n\n' +    
-      'Тиры и причины считаются композицией включённых фильтров, её состав — ' +
-      'в GET /universe/status.\n\n' +
-      'Отдаётся страницами: limit по умолчанию 100, максимум 2000. Полный список — ' +
-      'это мегабайты JSON, на которых виснет страница Swagger.',
+      'passedOnly=false покажет и отсеянных с полем rejectReason — почему именно.\n\n' +
+      'context рядом со списком обязателен: без universeVersion, builtAt и ' +
+      'activeFilters «331» не отличить ни от другого отбора, ни от другого снимка.\n\n' +
+      'Отдаётся страницами: limit по умолчанию 50, максимум 200. По умолчанию ' +
+      'view=summary — перцентили ниши, peers, склейка и сырые категории в него не ' +
+      'входят: на пятидесяти строках это половина веса ответа. Разбирать один токен ' +
+      'дешевле через GET /universe/{token}, там всё это есть вместе с оценкой.',
   })
-  @ApiOkResponse({ type: UniverseCandidateDto, isArray: true })
-  async list(@Query() query: UniverseQueryDto): Promise<UniverseCandidateDto[]> {
-    const snapshot = await this.universe.latest();
-    if (!snapshot) {
-      throw new NotFoundException(
-        'Вселенная ещё не собрана. Вызовите POST /universe/refresh',
-      );
-    }
-    const passedOnly = query.passedOnly ?? true;
-    const sector = query.sector?.trim().toLowerCase();
-    const sort = (query.sort ?? 'rank') as SortKey;    
-    const view = await this.universe.view();
-
-    return view.candidates
-      .filter((item) => (passedOnly ? item.passed : true))
-      .filter((item) => (query.tier ? item.tier === query.tier : true))
-      .filter((item) => (sector ? item.sector === sector : true))
-      .sort(comparator(sort))
-      .slice(query.offset ?? 0, (query.offset ?? 0) + (query.limit ?? 100));
+  @ApiOkResponse({ type: UniverseListResponseDto })
+  async list(
+    @Query() query: UniverseQueryDto,
+  ): Promise<Envelope<CandidateView | UniverseSummaryRow>> {
+    return this.universe.list(query as UniverseListQuery);
   }
-}
-
-/** rank сортируется по возрастанию, финансовые метрики — по убыванию. */
-function comparator(
-  sort: SortKey,
-): (left: UniverseCandidate, right: UniverseCandidate) => number {
-  if (sort === 'rank') return (left, right) => left.rank - right.rank;
-  if (sort === 'pRev') {
-    return (left, right) => (left.pRev ?? Infinity) - (right.pRev ?? Infinity);
-  }
-  return (left, right) => (right[sort] ?? -Infinity) - (left[sort] ?? -Infinity);
 }

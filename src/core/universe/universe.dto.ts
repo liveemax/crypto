@@ -64,12 +64,23 @@ export class UniverseQueryDto {
   @IsIn(['rank', 'holderYieldPct', 'revenue12mUsd', 'pRev'])
   sort?: string;
 
-  @ApiPropertyOptional({ default: 100 })
+  @ApiPropertyOptional({
+    enum: ['summary', 'full'],
+    default: 'summary',
+    description:
+      'full добавляет перцентили ниши, peers, склейку и сырые категории — это половина ' +
+      'веса ответа. Разбор одного токена дешевле делать через GET /universe/{token}',
+  })
+  @IsOptional()
+  @IsIn(['summary', 'full'])
+  view?: 'summary' | 'full';
+
+  @ApiPropertyOptional({ default: 50, description: 'По умолчанию 50, максимум 200' })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(2_000)
+  @Max(200)
   limit?: number;
 
   @ApiPropertyOptional({ default: 0 })

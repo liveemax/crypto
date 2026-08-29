@@ -1,5 +1,7 @@
 import type { AnalysisProfile } from './profile.types';
 import type { ActiveFilterState, FilterName } from './filter-state.types';
+import type { JobProgressEvent, JobStep } from '../jobs/job.types';
+import type { PageQuery } from '../envelope.types';
 import type { AlphaDataGap, AlphaSectorSummary, AlphaView } from './alpha.types';
 import type { AssetArchetype, DataState } from './comparison.types';
 import type { TokenomicsFields } from '../tokenomics/tokenomics.types';
@@ -112,20 +114,11 @@ export interface FunnelReport {
   tiers: Record<Tier, number>;
 }
 
-export type UniverseStep =
-  | 'idle'
-  | 'markets'
-  | 'categories'
-  | 'protocols'
-  | 'chains'
-  | 'fees'
-  | 'prices'
-  | 'tokenomics'
-  | 'join'  
-  | 'filter'
-  | 'save'
-  | 'done'
-  | 'failed';
+/**
+ * Словарь шагов и событие прогресса принадлежат JobService: состояние задачи
+ * живёт в одном сервисе, а имена здесь оставлены, чтобы импорты не переписывать.
+ */
+export type UniverseStep = JobStep;
 
 /** Счётчик пересборки: на каком шаге, сколько сделано, не лёг ли источник. */
 export interface UniverseProgress {
@@ -146,15 +139,7 @@ export interface UniverseProgress {
 }
 
 /** Событие прогресса, которое билдер отдаёт наружу. */
-export interface BuildProgressEvent {
-  step: UniverseStep;
-  label: string;
-  current: number;
-  total: number;
-  loaded: number;
-  failed: boolean;
-  error: string | null;
-}
+export type BuildProgressEvent = JobProgressEvent;
 
 export interface UniverseSnapshot {
   /** Дата сборки состава вселенной, она же ключ сопоставимости прогонов. */
@@ -281,4 +266,14 @@ export interface UniverseCompareResult {
   onlyLeft: CandidateRef[];
   onlyRight: CandidateRef[];
   tierChanges: TierChange[];
+}
+
+/** Запрос списка кандидатов. Сортировка и фильтры — через query, а не на клиенте. */
+export interface UniverseListQuery extends PageQuery {
+  passedOnly?: boolean;
+  tier?: Tier;
+  sector?: string;
+  sort?: 'rank' | 'holderYieldPct' | 'revenue12mUsd' | 'pRev';
+  /** summary по умолчанию: percentiles и peers пятидесяти строк — половина веса ответа. */
+  view?: 'summary' | 'full';
 }

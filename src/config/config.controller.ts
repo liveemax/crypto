@@ -2,43 +2,32 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AnalysisProfileDto } from '../core/universe/profile.dto';
 import { BUILTIN_PROFILES } from './profiles';
-import { ConfigThresholdsDto, SectorDto, UniverseItemDto } from './config.dto';
+import { ConfigThresholdsDto } from './config.dto';
 import { MAX_STALE_DAYS, THRESHOLDS, WEIGHTS } from './thresholds';
-import { sectors, UNIVERSE } from './universe';
 
 @ApiTags('config')
 @Controller('config')
 export class ConfigController {
-  /** Возвращает встроенные профили с объяснением проверяемой гипотезы. */
+  /**
+   * Возвращает встроенные профили с объяснением проверяемой гипотезы.
+   * Голым массивом намеренно: список короткий, статический и происхождения не имеет.
+   */
   @Get('profiles')
-  @ApiOperation({ summary: 'Получить встроенные профили анализа' })
+  @ApiOperation({
+    summary: 'Встроенные профили анализа и их гипотезы',
+    description:
+      'Тело любого профиля можно передать в POST /universe/screen как разовый. ' +
+      'Состава вселенной здесь нет: он живёт в GET /universe, и второй ответ на тот ' +
+      'же вопрос всегда оказывается неверным.',
+  })
   @ApiOkResponse({ type: AnalysisProfileDto, isArray: true })
   getProfiles(): AnalysisProfileDto[] {
     return [...BUILTIN_PROFILES];
   }
 
-  /** Возвращает полный список анализируемых активов. */
-  @Get('universe')
-  @ApiOperation({ summary: 'Получить вселенную анализируемых активов' })
-  @ApiOkResponse({ type: UniverseItemDto, isArray: true })
-  getUniverse(): UniverseItemDto[] {
-    return UNIVERSE;
-  }
-
-  /** Возвращает секторы и количество проектов в каждом из них. */
-  @Get('sectors')
-  @ApiOperation({ summary: 'Получить секторы и количество проектов' })
-  @ApiOkResponse({ type: SectorDto, isArray: true })
-  getSectors(): SectorDto[] {
-    return sectors().map((sector) => ({
-      sector,
-      projects: UNIVERSE.filter((item) => item.sector === sector).length,
-    }));
-  }
-
-  /** Возвращает пороги, веса и срок актуальности метрик. */
+  /** Возвращает пороги, веса и срок актуальности метрик профиля по умолчанию. */
   @Get('thresholds')
-  @ApiOperation({ summary: 'Получить пороги и веса аналитики' })
+  @ApiOperation({ summary: 'Пороги, веса композита и срок актуальности метрик' })
   @ApiOkResponse({ type: ConfigThresholdsDto })
   getThresholds(): ConfigThresholdsDto {
     return {

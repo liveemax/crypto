@@ -14,26 +14,6 @@ describe('ConfigController (e2e)', () => {
 
   afterAll(async () => app.close());
 
-  it('GET /config/universe возвращает ровно заданные 13 активов', async () => {
-    const response = await request(app.getHttpServer()).get('/config/universe').expect(200);
-    expect(response.body).toHaveLength(13);
-    expect(response.body[0]).toEqual({
-      ticker: 'HYPE', name: 'Hyperliquid', sector: 'perps', defillama: 'hyperliquid', coingecko: 'hyperliquid',
-    });
-  });
-
-  it('GET /config/sectors считает проекты и сортирует секторы', async () => {
-    const response = await request(app.getHttpServer()).get('/config/sectors').expect(200);
-    expect(response.body).toEqual(expect.arrayContaining([
-      { sector: 'lending', projects: 2 },
-      { sector: 'lst', projects: 2 },
-      { sector: 'perps', projects: 3 },
-    ]));
-    expect(response.body.map((item: { sector: string }) => item.sector)).toEqual(
-      [...response.body.map((item: { sector: string }) => item.sector)].sort(),
-    );
-  });
-
   it('GET /config/thresholds возвращает неизменяемые настройки', async () => {
     const response = await request(app.getHttpServer()).get('/config/thresholds').expect(200);
     expect(response.body).toEqual({
@@ -54,5 +34,14 @@ describe('ConfigController (e2e)', () => {
     expect(
       response.body.every((profile: { rationale: string }) => profile.rationale.length > 0),
     ).toBe(true);
+  });
+
+  it('НЕГАТИВНЫЙ: удалённые эндпоинты отвечают 404 в едином формате', async () => {
+    for (const path of ['/config/universe', '/config/sectors', '/snapshot', '/agents']) {
+      const response = await request(app.getHttpServer()).get(path).expect(404);
+      // Второй ответ на тот же вопрос всегда неверный, поэтому их нет; но тупика быть не должно.
+      expect(response.body.code).toBe('not_found');
+      expect(response.body.nextAction).toEqual({ method: 'GET', path: '/api', body: {} });
+    }
   });
 });

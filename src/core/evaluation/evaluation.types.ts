@@ -1,4 +1,5 @@
 import type { Metric } from '../types';
+import type { PaginationInfo, ResponseContext } from '../envelope.types';
 import type { ActiveFilterState } from '../universe/filter-state.types';
 import type { Tier } from '../universe/universe.types';
 
@@ -82,20 +83,12 @@ export interface EvaluationRun {
   candidates: CandidateEvaluation[];
 }
 
-/** Происхождение списка: без него число не отличить ни от чужого отбора, ни от чужого снимка. */
-export interface EvaluationContext {
-  universeVersion: string;
-  builtAt: string;
-  activeFilters: ActiveFilterState;
-  asOf: string;
-}
-
-export interface PaginationInfo {
-  offset: number;
-  limit: number;
-  total: number;
-  hasMore: boolean;
-}
+/**
+ * Происхождение и страница объявлены один раз в core/envelope.types: две копии
+ * одной формы расходятся ровно тогда, когда в конверт добавляется поле.
+ */
+export type EvaluationContext = ResponseContext;
+export type { PaginationInfo };
 
 export interface EvaluationReuse {
   perToken: boolean;

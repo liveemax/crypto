@@ -1,30 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class UniverseItemDto {
-  @ApiProperty({ example: 'AAVE' })
-  ticker!: string;
-
-  @ApiProperty({ example: 'Aave' })
-  name!: string;
-
-  @ApiProperty({ example: 'lending' })
-  sector!: string;
-
-  @ApiProperty({ example: 'aave' })
-  defillama!: string;
-
-  @ApiProperty({ example: 'aave' })
-  coingecko!: string;
-}
-
-export class SectorDto {
-  @ApiProperty({ example: 'lending' })
-  sector!: string;
-
-  @ApiProperty({ example: 2 })
-  projects!: number;
-}
-
 export class ScreenerThresholdsDto {
   @ApiProperty({ example: 50_000_000 })
   minMcapUsd!: number;

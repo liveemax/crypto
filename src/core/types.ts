@@ -1,6 +1,7 @@
-import { UniverseCandidate } from './universe/universe.types';
-import type { AnalysisProfile } from './universe/profile.types';
-
+/**
+ * Число с происхождением. Без sourceUrl и asOf валидатор его обнуляет: это код,
+ * а не договорённость. Метрики создаются только через metric().
+ */
 export interface Metric {
   value: number | string | null;
   unit: string;
@@ -10,6 +11,14 @@ export interface Metric {
   staleDays?: number;
 }
 
+/**
+ * Результат одного анализа: общая форма для кодовой оценки и будущих LLM-агентов.
+ *
+ * SnapshotRow, Agent и AgentContext удалены вместе со SnapshotService: это был
+ * второй слой тех же чисел, с asOfFees, равным времени запроса. Вход агентов
+ * собирается из UniverseView и EvaluationRun и объявляется на шаге 13, когда
+ * появится первый настоящий агент.
+ */
 export interface AgentResult {
   agent: string;
   title: string;
@@ -25,62 +34,4 @@ export interface AgentResult {
   notes: string;
   validator?: { dropped: string[]; stale: string[] };
   error?: string;
-}
-
-export interface SnapshotRow {
-  ticker: string;
-  name: string;
-  sector: string;
-  asOf: string;
-  priceUsd: number | null;
-  mcapUsd: number | null;
-  fdvUsd: number | null;
-  vol24hUsd: number | null;
-  circulating: number | null;
-  totalSupply: number | null;
-  revenue1y: number | null;
-  revenue30d: number | null;
-  tvlUsd: number | null;
-  mcapSource: string | null;
-  feesSource: string | null;
-  tvlSource: string | null;
-  errors: string[];
-
-  /** Капитализация, посчитанная кодом: price × circulating. */
-  mcapCalcUsd?: number | null;
-  /** Время обновления рыночных данных на стороне CoinGecko. */
-  asOfMarket?: string | null;
-  /** Время обновления выручки на стороне DeFiLlama. */
-  asOfFees?: string | null;
-  /** Время обновления TVL на стороне DeFiLlama. */
-  asOfTvl?: string | null;
-  /** Основание расчёта выручки за 12 месяцев. */
-  revenueBasis?: 'reported_1y' | 'run_rate_30d' | 'none';
-  /** Версия вселенной, в составе которой собрана строка. */
-  universeVersion?: string | null;
-}
-
-export interface AgentContext {
-  snapshot: SnapshotRow[];
-  /** Кандидат вселенной со всеми посчитанными метриками и источниками. */
-  candidate?: UniverseCandidate;
-  /** Версия вселенной: перцентили сектора сравнимы только внутри неё. */
-  universeVersion?: string | null;
-  /** Профиль анализа: пороги хард-фильтров берутся отсюда, а не из констант. */
-  profile?: AnalysisProfile;
-  docsText?: string;
-  docsSources?: string[];
-  priorResults?: Record<string, AgentResult>;
-  buyback12mUsd?: number;
-  incentives12mUsd?: number;
-  cashDistrib12mUsd?: number;
-  burn12mUsd?: number;
-}
-
-export interface Agent {
-  readonly name: string;
-  readonly title: string;
-  readonly needsLlm: boolean;
-  readonly needs: (keyof SnapshotRow)[];
-  run(token: string, row: SnapshotRow, ctx: AgentContext): Promise<AgentResult>;
 }

@@ -25,6 +25,7 @@ async function bootstrap(): Promise<void> {
     .addTag('system', 'Состояние системы: что идёт и что делать дальше')
     .addTag('universe', 'Состав, числа, отбор и объяснение по одному токену')
     .addTag('evaluation', 'Кодовая оценка: valuation, tokenomics, sectorPosition')
+    .addTag('ranking', 'Композит трёх компонентов и тиры A/B/C/watchlist')
     .addTag('manual', 'Ручные вводы: разлоки, документация, оверрайды')
     .addTag('config', 'Профили, пороги и веса')
     .build();

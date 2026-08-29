@@ -1,9 +1,12 @@
 import type { ActiveFilterState } from '../universe/filter-state.types';
+import type { DataTier } from '../universe/universe.types';
+import type { PaginationInfo, ResponseContext } from '../envelope.types';
 import type {
   CandidateEvaluation,
   EvaluationComponentName,
   EvaluationInputHashes,
   NotEvaluatedComponent,
+  RiskFlagId,
 } from '../evaluation/evaluation.types';
 
 /**
@@ -69,4 +72,64 @@ export interface RankingRun {
   tiers: Record<RankTier, number>;
   notEvaluated: NotEvaluatedComponent[];
   candidates: RankedCandidate[];
+}
+
+export interface RankingListQuery {
+  offset?: number;
+  limit?: number;
+  view?: 'summary' | 'full';
+}
+
+/** Композит и его метаданные одним объектом: то же взвешенное среднее, что решает тир. */
+export interface RankingCompositeMeta {
+  compositeBase: number | null;
+  composite: number | null;
+  componentsUsed: EvaluationComponentName[];
+  weightSum: number;
+  compositeReason: string | null;
+  dataQuality: number;
+}
+
+/** Короткая версия риск-флага для summary: provenance метрики едет только в full. */
+export interface RankingRiskFlagSummary {
+  id: RiskFlagId;
+  label: string;
+  penalty: number;
+}
+
+/** Строка summary: тяжёлые metrics/percentiles/peers/provenance остаются только в full. */
+export interface RankingSummaryRow {
+  coingeckoId: string;
+  ticker: string;
+  name: string;
+  comparisonGroup: string | null;
+  dataTier: DataTier;
+  rankTier: RankTier;
+  scores: Record<EvaluationComponentName, number | null>;
+  dataQuality: Record<EvaluationComponentName, number>;
+  composite: RankingCompositeMeta;
+  hardFilters: HardFilterReason[];
+  missing: string[];
+  riskFlags: RankingRiskFlagSummary[];
+  flagPenalty: number;
+  notEvaluated: NotEvaluatedComponent[];
+}
+
+export interface RankingListResponse {
+  context: ResponseContext;
+  runId: string;
+  createdAt: string;
+  rankingProfileId: string;
+  formulaVersions: RankingFormulaVersions;
+  tiers: Record<RankTier, number>;
+  notEvaluated: NotEvaluatedComponent[];
+  pagination: PaginationInfo;
+  items: (RankedCandidate | RankingSummaryRow)[];
+}
+
+export interface RankingRunResponse extends RankingListResponse {
+  evaluationRunId: string;
+  evaluationRecomputed: boolean;
+  candidateCount: number;
+  inputHashes: EvaluationInputHashes;
 }

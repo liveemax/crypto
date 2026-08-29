@@ -2,13 +2,13 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { BUILTIN_PROFILES, DEFAULT_PROFILE, getProfile } from '../../config/profiles';
 import { add, div, round } from '../money';
 import { StoreService } from '../store/store.service';
-import { sectorPositions } from '../universe/alpha';
+import { businessScalePositions } from '../universe/alpha';
 import type { SectorPosition } from '../universe/alpha';
-import { SUPPLY_FIELD, evaluationRankConfig } from './evaluation.constants';
 import type { AlphaConfig, AnalysisProfile } from '../universe/profile.types';
 import { UniverseService } from '../universe/universe.service';
 import type { CandidateView, UniverseView } from '../universe/universe.types';
 import { evaluateSectorPosition } from './sector-position';
+import { SUPPLY_FIELD } from './evaluation.constants';
 import { evaluateTokenomics } from './tokenomics-block';
 import { evaluateValuation } from './valuation';
 import { inputHashes } from './evaluation.hash';
@@ -123,8 +123,11 @@ export class EvaluationService {
     );
 
     const warnings: string[] = [];
-    const evaluationRank = evaluationRankConfig(rankBy);
-    const positions = this.positionsOf(selection, evaluationRank, warnings);
+    const positions = alphaOn
+      ? new Map<string, SectorPosition | null>(
+          selection.map((candidate) => [candidate.coingeckoId, candidate.alpha] as const),
+        )
+      : this.positionsOf(selection, rankBy, warnings);
 
     // Балл по шкале одного профиля рядом с отбором по порогам другого — два разных
     // ответа на один вопрос, и молча их смешивать нельзя.
@@ -164,7 +167,7 @@ export class EvaluationService {
         sectorPosition = evaluateSectorPosition(
           candidate,
           position,
-          evaluationRank,
+          rankBy,
           candidate.alpha,
           alphaOn,
         );
@@ -318,7 +321,7 @@ export class EvaluationService {
   ): Map<string, SectorPosition | null> {
     const positions = new Map<string, SectorPosition | null>();
     const outliers: string[] = [];
-    for (const [id, position] of sectorPositions(selection, rankBy, outliers)) {
+    for (const [id, position] of businessScalePositions(selection, rankBy)) {
       positions.set(id, position);
     }
     if (outliers.length > 0) {

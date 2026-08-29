@@ -257,7 +257,7 @@ describe('Приёмка шага 10: массовая кодовая оценк
     expect(unknown?.tokenomics.verdict.dilutionRisk).toBe('unknown');
     // Календаря нет, но навес известен: балл ставится по нему, а не пропускается.
     expect(unknown?.tokenomics.score).not.toBeNull();
-    expect(unknown?.tokenomics.verdict.basis).toBe('sector_percentile');
+    expect(unknown?.tokenomics.verdict.basis).toBe('absolute_overhang');
   });
 
   it('НЕГАТИВНЫЙ: разлок выше навеса снимает хард-фильтр, а не подтверждает его', async () => {
@@ -277,21 +277,19 @@ describe('Приёмка шага 10: массовая кодовая оценк
 
     // Навес известен у всех фикстур, значит балл есть у всех.
     expect(result.summaries.tokenomics.scored).toBe(total);
-    expect(result.summaries.sectorPosition.scored).toBe(total);
+    expect(result.summaries.sectorPosition.scored).toBeLessThan(total);
     // Дешевизна остаётся на потолке покрытия выручки: её поднять нечем.
     expect(result.summaries.valuation.scored).toBeLessThan(total);
   });
 
-  it('токен без выручки получает место по предложению и честную роль', async () => {
+  it('токен без одной business scale оси остаётся data gap' , async () => {
     await service.run();
     const run = runs.at(-1) as EvaluationRun;
     const pool = run.candidates.find((item) => item.ticker === 'POOL');
 
-    expect(pool?.sectorPosition.score).not.toBeNull();
-    expect(pool?.sectorPosition.verdict.economicAxes).toBe(0);
-    expect(pool?.sectorPosition.verdict.role).toBe('supply_only');
-    expect(pool?.sectorPosition.verdict.rankedOn).toBe(1);
-    expect(pool?.sectorPosition.notes).toContain('только по предложению');
+    expect(pool?.sectorPosition.score).toBeNull();
+    expect(pool?.sectorPosition.verdict.role).toBe('unknown');
+    expect(pool?.sectorPosition.verdict.businessScaleScore).toBeNull();
   });
 
   it('НЕГАТИВНЫЙ: метрика без источника обнуляется, качество падает, поле уходит в missing', async () => {

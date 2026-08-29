@@ -11,6 +11,13 @@ export type AlphaDecision =
   | 'alpha_unrankable'
   | 'alpha_missing_sector';
 
+export type AlphaStatus =
+  | 'sector_leader'
+  | 'outranked'
+  | 'insufficient_data'
+  | 'sector_not_saturated'
+  | 'missing_sector';
+
 export interface SectorPercentile {
   field: NumericField;
   direction: 'higher_better' | 'lower_better';
@@ -20,17 +27,27 @@ export interface SectorPercentile {
   percentile: number | null;
   /** У скольких участников сектора это число есть. */
   ranked: number;
+  /** Provenance именно того значения, которое участвовало в сравнении. */
+  sourceUrl: string | null;
+  asOf: string | null;
 }
 
 export interface AlphaView {
   sectorSize: number;
   /** Место среди сравнимых участников; null — сравнить не удалось. */
   rankInSector: number | null;
-  sectorScore: number | null;
+  businessScaleScore: number | null;
+  tvlRank: number | null;
+  revenueRank: number | null;
+  tvlRanked: number;
+  revenueRanked: number;
+  tvlSharePct: number | null;
   percentiles: SectorPercentile[];
   /** Доля в выручке сектора: производное поле ответа, не поле кандидата. */
   revenueSharePct: number | null;
   comparisonAvailable: boolean;
+  alphaQualified: boolean;
+  alphaStatus: AlphaStatus;
   decision: AlphaDecision;
   decisionReason: string;
   /** До двенадцати конкурентов: сектор из трёхсот в строку не кладётся. */

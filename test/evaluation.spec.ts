@@ -431,6 +431,26 @@ describe('Приёмка шага 10: массовая кодовая оценк
     expect(DEFAULT_PROFILE.thresholds.maxPRev).toBe(60);
   });
 
+  it('ШАГ 13: notEvaluated виден в run, кандидате и summary без score:0', async () => {
+    const result = await service.run();
+    const run = runs.at(-1) as EvaluationRun;
+
+    expect(result.notEvaluated).toEqual([
+      {
+        id: 'mechanism',
+        why: expect.any(String),
+        whatWeMeasureInstead: ['holdersRevenue12mUsd', 'payoutRatioPct', 'holderYieldPct'],
+      },
+    ]);
+    expect(run.notEvaluated).toEqual(result.notEvaluated);
+    expect(run.candidates.every((item) => item.notEvaluated === result.notEvaluated)).toBe(true);
+    // mechanism не входит ни в один из трёх посчитанных компонентов.
+    expect(run.candidates[0]).not.toHaveProperty('mechanism');
+
+    const summary = await service.list({ limit: 50 });
+    expect((summary.items[0] as { notEvaluated: unknown }).notEvaluated).toEqual(result.notEvaluated);
+  });
+
   it('токен вне выборки получает 200 с причиной, а не 404', async () => {
     await universe.applyScreen({ enabled: true, profileId: 'default' });
     await service.run();

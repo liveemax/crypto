@@ -97,6 +97,23 @@ const valuationConfigSchema = z
 export function parseAlphaConfig(value: unknown): AlphaConfig {
   return alphaConfigSchema.parse(dropUndefined(value)) as AlphaConfig;
 }
+
+/**
+ * Три точных ключа композита. Object.strict() отклоняет и недостачу, и лишний
+ * четвёртый ключ вроде вернувшегося mechanism — свободный Record такого не умеет.
+ */
+const weightsSchema = z
+  .object({
+    tokenomics: z.number().finite().nonnegative(),
+    valuation: z.number().finite().nonnegative(),
+    sectorPosition: z.number().finite().nonnegative(),
+  })
+  .strict()
+  .refine(
+    (weights) => Math.abs(weights.tokenomics + weights.valuation + weights.sectorPosition - 1) < 1e-9,
+    { message: 'Сумма весов tokenomics + valuation + sectorPosition должна быть равна 1' },
+  );
+
 const profileSchema = z
   .object({
     id: z.string().trim().regex(/^[a-z0-9][a-z0-9-]*$/),
@@ -113,13 +130,7 @@ const profileSchema = z
     codeEvaluations: z
       .array(z.enum(['valuation', 'tokenomics', 'sectorPosition']))
       .min(1),
-    weights: z
-      .record(z.string().trim().min(1), z.number().finite().nonnegative())
-      .refine(
-        (weights: Record<string, number>) =>
-          Object.values(weights).some((weight) => weight > 0),
-        { message: 'Хотя бы один вес должен быть больше нуля' },
-      ),
+    weights: weightsSchema,
     tierCuts: z
       .object({
         a: z.number().min(0).max(100),

@@ -46,4 +46,29 @@ describe('Разовый профиль', () => {
     expect(() => parseAnalysisProfile(badWeights)).toThrow('valuation');
   });
 
+  it('ШАГ 13: веса композита — ровно три ключа, сумма 1', () => {
+    expect(DEFAULT_PROFILE.weights).toEqual({
+      tokenomics: 0.35,
+      valuation: 0.35,
+      sectorPosition: 0.3,
+    });
+
+    const fourthKey = {
+      ...DEFAULT_PROFILE,
+      weights: { ...DEFAULT_PROFILE.weights, mechanism: 0.1 },
+    };
+    expect(() => parseAnalysisProfile(fourthKey)).toThrow();
+
+    const missingKey = {
+      ...DEFAULT_PROFILE,
+      weights: { tokenomics: 0.5, valuation: 0.5 },
+    };
+    expect(() => parseAnalysisProfile(missingKey)).toThrow();
+
+    const badSum = {
+      ...DEFAULT_PROFILE,
+      weights: { tokenomics: 0.35, valuation: 0.2, sectorPosition: 0.2 },
+    };
+    expect(() => parseAnalysisProfile(badSum)).toThrow('Сумма весов');
+  });
 });

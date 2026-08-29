@@ -15,10 +15,10 @@ export class CompositeWeightsDto {
   @ApiProperty({ example: 0.35, description: 'NHY: доход держателя минус разводнение' })
   tokenomics!: number;
 
-  @ApiProperty({ example: 0.2, description: 'Дешевизна относительно собственной выручки' })
+  @ApiProperty({ example: 0.35, description: 'Дешевизна относительно собственной выручки' })
   valuation!: number;
 
-  @ApiProperty({ example: 0.2, description: 'Положение среди прямых конкурентов' })
+  @ApiProperty({ example: 0.3, description: 'Положение среди прямых конкурентов' })
   sectorPosition!: number;
 }
 

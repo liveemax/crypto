@@ -6,7 +6,6 @@ import {
   IsIn,
   IsInt,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -121,6 +120,23 @@ export class ProfileThresholdsDto {
   @ApiProperty({ example: 60 }) @IsNumber() @Min(0) maxPRev!: number;
 }
 
+export class EvaluationWeightsDto {
+  @ApiProperty({ example: 0.35, description: 'NHY: доход держателя минус разводнение' })
+  @IsNumber()
+  @Min(0)
+  tokenomics!: number;
+
+  @ApiProperty({ example: 0.35, description: 'Дешевизна относительно собственной выручки' })
+  @IsNumber()
+  @Min(0)
+  valuation!: number;
+
+  @ApiProperty({ example: 0.3, description: 'Положение среди прямых конкурентов' })
+  @IsNumber()
+  @Min(0)
+  sectorPosition!: number;
+}
+
 export class TierCutsDto {
   @ApiProperty({ example: 70 }) @IsNumber() @Min(0) @Max(100) a!: number;
   @ApiProperty({ example: 45 }) @IsNumber() @Min(0) @Max(100) b!: number;
@@ -162,9 +178,10 @@ export class AnalysisProfileDto {
   @IsString({ each: true })
   codeEvaluations!: string[];
 
-  @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } })
-  @IsObject()
-  weights!: Record<string, number>;
+  @ApiProperty({ type: EvaluationWeightsDto, description: 'Три точных ключа, сумма равна 1' })
+  @ValidateNested()
+  @Type(() => EvaluationWeightsDto)
+  weights!: EvaluationWeightsDto;
 
   @ApiProperty({ type: TierCutsDto })
   @ValidateNested()

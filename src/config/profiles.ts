@@ -1,5 +1,5 @@
 import { DISCOVERY } from './discovery';
-import type { EvaluationComponentName } from '../core/evaluation/evaluation.types';
+import type { EvaluationComponentName, EvaluationWeights } from '../core/evaluation/evaluation.types';
 import type { AnalysisProfile, ScreenRule } from '../core/universe/profile.types';
 
 const BASE_SCREEN: ScreenRule[] = [
@@ -110,8 +110,8 @@ const CODE_EVALUATIONS: EvaluationComponentName[] = [
   'tokenomics',
   'sectorPosition',
 ];
-// Веса кодовых компонентов сохранены без перенормировки.
-const WEIGHTS = { tokenomics: 0.35, valuation: 0.2, sectorPosition: 0.2 };
+// ШАГ 13: три точных веса вместо унаследованных от снятого mechanism. Сумма — 1.
+const WEIGHTS: EvaluationWeights = { tokenomics: 0.35, valuation: 0.35, sectorPosition: 0.3 };
 const TIER_CUTS = { a: 70, b: 45, minDataQuality: 0.5 };
 const THRESHOLDS = {
   minMcapUsd: 50_000_000,

@@ -8,7 +8,7 @@ import type { AlphaConfig, AnalysisProfile } from '../universe/profile.types';
 import { UniverseService } from '../universe/universe.service';
 import type { CandidateView, UniverseView } from '../universe/universe.types';
 import { evaluateSectorPosition } from './sector-position';
-import { BUSINESS_SCALE_FORMULA_VERSION } from './evaluation.constants';
+import { BUSINESS_SCALE_FORMULA_VERSION, NOT_EVALUATED } from './evaluation.constants';
 import { evaluateTokenomics } from './tokenomics-block';
 import { valuationPositions } from './valuation';
 import { inputHashes } from './evaluation.hash';
@@ -184,6 +184,7 @@ export class EvaluationService {
         valuation,
         tokenomics,
         sectorPosition,
+        notEvaluated: NOT_EVALUATED,
       };
     });
 
@@ -211,6 +212,7 @@ export class EvaluationService {
       dataGapCount: candidates.filter((item) => gapOf(item)).length,
       warnings,
       summaries: summariesOf(candidates),
+      notEvaluated: NOT_EVALUATED,
       candidates,
     };
 
@@ -349,6 +351,7 @@ export class EvaluationService {
       evaluationProfileId: run.evaluationProfileId,
       formulaVersions: run.formulaVersions,
       summaries: run.summaries,
+      notEvaluated: run.notEvaluated,
       pagination: {
         offset,
         limit,
@@ -412,6 +415,7 @@ function summaryRow(item: CandidateEvaluation): EvaluationSummaryRow {
     dataQuality: quality,
     hardFilterFail: item.tokenomics.verdict.hardFilterFail === true,
     missing: [...missing].sort(),
+    notEvaluated: item.notEvaluated,
   };
 }
 

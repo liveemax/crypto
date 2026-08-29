@@ -1,6 +1,6 @@
 import { DEEP_VALUE_PROFILE, DEFAULT_PROFILE } from '../src/config/profiles';
 import { EvaluationService } from '../src/core/evaluation/evaluation.service';
-import type { EvaluationRun } from '../src/core/evaluation/evaluation.types';
+import type { CandidateEvaluation, EvaluationRun } from '../src/core/evaluation/evaluation.types';
 import { JobService } from '../src/core/jobs/job.service';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -231,17 +231,46 @@ describe('Приёмка шага 10: массовая кодовая оценк
     expect(dx1?.sectorPosition.verdict.rankInSector).toBe(1);
   });
 
-  it('смена только alpha пересчитывает sectorPosition и переиспользует остальное', async () => {
+  it('ШАГ 12.3: смена alpha переиспользует tokenomics и пересчитывает comparative-компоненты', async () => {
     await universe.applyScreen({ enabled: true, profileId: 'default' });
     await service.run();
 
     await universe.applyAlphaFilter({ enabled: true, profileId: 'default' });
     const second = await service.run();
 
-    expect(second.reuse.perToken).toBe(true);
-    expect(second.reuse.comparative).toBe(false);
-    expect(second.reuse.recomputedTokens).toBe(0);
-    expect(second.reuse.recomputedSectorPosition).toBeGreaterThan(0);
+    expect(second.reuse.components.tokenomics).toMatchObject({ status: 'reused', recomputed: 0 });
+    expect(second.reuse.components.valuation.recomputed).toBeGreaterThan(0);
+    expect(second.reuse.components.sectorPosition.recomputed).toBeGreaterThan(0);
+    expect(second.inputHashes).toEqual({
+      perToken: expect.any(String),
+      comparative: expect.any(String),
+    });
+    expect(second.formulaVersions).toEqual({
+      businessScale: 'business-scale-v1',
+      valuation: 'sector-valuation-v1',
+    });
+  });
+
+  it('ШАГ 12.3: неизменный ввод переиспользует все компоненты', async () => {
+    await service.run();
+    const second = await service.run();
+
+    expect(Object.values(second.reuse.components).every((item) => item.status === 'reused')).toBe(true);
+    expect(Object.values(second.reuse.components).every((item) => item.recomputed === 0)).toBe(true);
+  });
+
+  it('ШАГ 12.3: summary не содержит тяжёлые ветви, full сохраняет их', async () => {
+    await service.run();
+    const summary = await service.list({ limit: 50 });
+    const full = await service.list({ limit: 50, view: 'full' });
+    const summaryItem = summary.items[0];
+    const fullItem = full.items[0] as CandidateEvaluation;
+
+    expect(summaryItem).not.toHaveProperty('valuation');
+    expect(summaryItem).not.toHaveProperty('sectorPosition');
+    expect(fullItem.valuation.verdict).toHaveProperty('percentiles');
+    expect(fullItem.valuation.metrics).toHaveProperty('pRev');
+    expect(Buffer.byteLength(JSON.stringify(summary))).toBeLessThan(300_000);
   });
 
   it('подтверждённый отрицательный NHY даёт hardFilterFail, неизвестный календарь — нет', async () => {

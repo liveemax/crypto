@@ -21,6 +21,9 @@ export const DILUTION_PENALTY = { high: 15, medium: 7 } as const;
  */
 export const NHY_NOISE_PCT = 1;
 
+/** Версия сравнительной формулы масштаба бизнеса, сохраняемая с каждым run. */
+export const BUSINESS_SCALE_FORMULA_VERSION = 'business-scale-v1';
+
 /** Пороги роли в нише. Таблица заморожена в коде и в профиль не выносится. */
 export const ROLE_CUTS = {
   leaderSharePct: 40,

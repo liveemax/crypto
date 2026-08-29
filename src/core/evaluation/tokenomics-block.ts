@@ -14,28 +14,18 @@ import type { EvaluationBlock } from './evaluation.types';
 const TITLE = 'Предложение: навес, разлоки и NHY';
 
 /**
- * Оценивает давление предложения. База — место по навесу среди прямых
- * конкурентов: у кого эмиссия выпущена, тот выше; у кого впереди выпуск — ниже.
- * Календарь разлоков уточняет базу штрафом, а не заменяет её собой.
+ * Оценивает давление предложения по абсолютному навесу. Состав текущей выборки
+ * не влияет на покомпонентный факт; календарь уточняет базу штрафом.
  */
 export function evaluateTokenomics(
   candidate: UniverseCandidate,
-  overhangPercentile: number | null,
 ): EvaluationBlock {
   const overhang = candidate.overhangPct;
   const unlock = candidate.unlock12mPct;
   const nhy = candidate.netHolderYieldPct;
 
-  const base =
-    overhangPercentile !== null
-      ? overhangPercentile
-      : absoluteOverhangScore(overhang);
-  const basis =
-    overhangPercentile !== null
-      ? 'sector_percentile'
-      : base !== null
-        ? 'absolute_overhang'
-        : 'none';
+  const base = absoluteOverhangScore(overhang);
+  const basis = base !== null ? 'absolute_overhang' : 'none';
 
   const penalty = penaltyOf(unlock);
   const score = base === null ? null : round(Math.max(0, sub(base, penalty)), 1);
@@ -52,10 +42,8 @@ export function evaluateTokenomics(
 
   const risk = dilutionRiskOf(unlock);
   const notes: string[] = [];
-  if (basis === 'sector_percentile') {
-    notes.push(`Место по навесу среди конкурентов ниши: перцентиль ${overhangPercentile}.`);
-  } else if (basis === 'absolute_overhang') {
-    notes.push('Сравнивать не с кем: навес оценён по абсолютной шкале, не по нише.');
+  if (basis === 'absolute_overhang') {
+    notes.push('Навес оценён по абсолютной шкале и не зависит от состава активной выборки.');
   } else {
     notes.push('Навес неизвестен: ни circulating, ни totalSupply не дают числа. Балл не выставлен.');
   }
@@ -76,7 +64,6 @@ export function evaluateTokenomics(
     score,
     verdict: {
       basis,
-      overhangPercentile,
       supplyPressurePct: overhang,
       unlock12mPct: unlock,
       netHolderYieldPct: nhy,

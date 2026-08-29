@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { DEEP_VALUE_PROFILE, DEFAULT_PROFILE } from '../src/config/profiles';
 import { JobService } from '../src/core/jobs/job.service';
 import { StoreService } from '../src/core/store/store.service';
 import { FilterStateService } from '../src/core/universe/filter-state.service';
@@ -231,6 +232,38 @@ describe('Приёмка шага 05: состояние фильтров', () =
     expect(actual.passed).toBe(expected.passed);
     expect(actual.activeFilters).toEqual(expected.activeFilters);
     expect(actual.profileId).toBe('deep-value');
+  });
+
+  it('мигрирует встроенные фильтры прошлого релиза и не публикует старый контракт', async () => {
+    state.value = {
+      screen: {
+        enabled: true,
+        profileId: 'deep-value',
+        profile: {
+          ...DEFAULT_PROFILE,
+          id: 'deep-value',
+          llmAgents: ['mechanism', 'critic'],
+          alpha: {
+            ...DEFAULT_PROFILE.alpha,
+            rankBy: [{ field: 'pRev', direction: 'lower_better' }],
+          },
+        },
+      },
+      alpha: {
+        enabled: true,
+        profileId: 'default',
+        config: {
+          ...DEFAULT_PROFILE.alpha,
+          rankBy: [{ field: 'pFees', direction: 'lower_better' }],
+        },
+      },
+    };
+
+    const filters = (await service.status()).activeFilters;
+
+    expect(filters.screen.profile).toEqual(DEEP_VALUE_PROFILE);
+    expect(filters.screen.profile).not.toHaveProperty('llmAgents');
+    expect(filters.alpha.config).toEqual(DEFAULT_PROFILE.alpha);
   });
 
   it('снимок не мутируется, на диск ложится только состояние', async () => {

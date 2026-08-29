@@ -1,58 +1,61 @@
 import { DEFAULT_PROFILE } from '../src/config/profiles';
-import { applyAlpha } from '../src/core/universe/alpha';
+import { applyAlpha, businessScalePositions } from '../src/core/universe/alpha';
 import type { CandidateView } from '../src/core/universe/universe.types';
 
-/** Минимальный участник: заполнены только поля, которые читает альфа. */
-function member(ticker: string, patch: Partial<CandidateView>): CandidateView {
+function member(ticker: string, tvlUsd: number | null, revenue12mUsd: number | null, patch: Partial<CandidateView> = {}): CandidateView {
   return {
     coingeckoId: ticker.toLowerCase(), ticker, name: ticker,
-    comparisonGroup: 'layer-1', assetArchetype: 'chain', sector: 'chain',
-    rawSectors: [], matchedBy: 'chain', revenueState: 'unsupported_business_model',
-    mcapCalcUsd: 1_000_000_000, revenue12mUsd: null, holdersRevenue12mUsd: null,
-    holderYieldPct: null, revenuePerTvlPct: null, pRev: null, tvlUsd: null,
-    fees12mUsd: null, pFees: null, revenueSource: null, marketAsOf: null,
+    comparisonGroup: 'dexs', assetArchetype: 'protocol', sector: 'dexs',
+    rawSectors: [], matchedBy: 'gecko_id', revenueState: 'available',
+    tvlUsd, revenue12mUsd, tvlSource: 'https://defillama.com/protocol/test',
+    revenueSource: 'https://defillama.com/protocol/test',
+    marketAsOf: '2026-08-29T00:00:00.000Z', sourceHealthy: true,
     passed: true, tier: 'pool', rejectedAt: null, rejectReason: null, alpha: null,
     ...patch,
   } as unknown as CandidateView;
 }
 
-describe('Ранжирование по комиссиям', () => {
-  it('ниша, где у всех только комиссии, сравнима', () => {
-    const members = [
-      member('AAA', { fees12mUsd: 100_000_000, pFees: 4 }),
-      member('BBB', { fees12mUsd: 50_000_000, pFees: 8 }),
-      member('CCC', { fees12mUsd: 20_000_000, pFees: 20 }),
-      member('DDD', { fees12mUsd: 10_000_000, pFees: 40 }),
-      member('EEE', { fees12mUsd: 5_000_000, pFees: 60 }),
-      member('FFF', { fees12mUsd: 1_000_000, pFees: 90 }),
+describe('Единый business scale', () => {
+  it('ранжирует LARGE первым, исключает NOSRC и требует обе оси', () => {
+    const rows = [
+      member('LARGE', 1_000, 1_000), member('MID', 700, 700), member('SMALL', 400, 400),
+      member('FOUR', 300, 300), member('FIVE', 200, 200), member('SIX', 100, 100),
+      member('NOSRC', 10_000, 10_000, { tvlSource: null, revenueSource: null }),
+      member('MISSING_AXIS', null, 900),
     ];
+    const positions = businessScalePositions(rows, DEFAULT_PROFILE.alpha);
 
-    const out = applyAlpha(members, DEFAULT_PROFILE.alpha);
-    const sector = out.sectors.find((item) => item.sector === 'layer-1');
+    expect(positions.get('large')).toMatchObject({ rankInSector: 1, businessScaleScore: 100, alphaQualified: true });
+    expect(positions.get('nosrc')).toMatchObject({ businessScaleScore: null, alphaStatus: 'insufficient_data' });
+    expect(positions.get('missing_axis')).toMatchObject({ businessScaleScore: null, alphaQualified: false });
+    expect(positions.get('large')?.percentiles.map((axis) => axis.ranked)).toEqual([6, 7]);
 
-    expect(sector?.ranked).toBe(6);
-    expect(sector?.kept).toBe(5);
-    expect(members.find((m) => m.ticker === 'AAA')?.alpha?.rankInSector).toBe(1);
-    expect(members.find((m) => m.ticker === 'FFF')?.alpha?.decision).toBe('alpha_outranked');
+    const outcome = applyAlpha(rows, DEFAULT_PROFILE.alpha);
+    expect(rows.find((row) => row.ticker === 'SIX')?.passed).toBe(false);
+    expect(rows.find((row) => row.ticker === 'NOSRC')?.passed).toBe(true);
+    expect(rows.find((row) => row.ticker === 'MISSING_AXIS')?.passed).toBe(true);
+    expect(outcome.sectors[0]).toMatchObject({ ranked: 6, dropped: 1 });
   });
 
-  it('участник с одними комиссиями сравнивается только по ним', () => {
-    const members = [
-      member('WITH', { fees12mUsd: 100_000_000, pFees: 4, revenue12mUsd: 50_000_000, pRev: 8 }),
-      member('ONLY', { fees12mUsd: 60_000_000, pFees: 6 }),
-      member('POOR', { fees12mUsd: 10_000_000, pFees: 30 }),
-    ];
-    applyAlpha(members, DEFAULT_PROFILE.alpha);
+  it('не строит перцентиль и score по двум подтверждённым значениям', () => {
+    const positions = businessScalePositions(
+      [member('ONE', 2, 2), member('TWO', 1, 1)],
+      DEFAULT_PROFILE.alpha,
+    );
+    expect(positions.get('one')?.percentiles.map((axis) => axis.percentile)).toEqual([null, null]);
+    expect(positions.get('one')?.businessScaleScore).toBeNull();
+  });
 
-    const only = members.find((m) => m.ticker === 'ONLY')?.alpha;
-    const revenue = only?.percentiles.find((p) => p.field === 'revenue12mUsd');
-    const fees = only?.percentiles.find((p) => p.field === 'fees12mUsd');
+  it('в ненасыщенной нише не объявляет участника alpha-лидером', () => {
+    const positions = businessScalePositions(
+      [member('LARGE', 3, 3), member('MID', 2, 2), member('SMALL', 1, 1)],
+      DEFAULT_PROFILE.alpha,
+    );
 
-    // Нет числа — нет перцентиля; ноль здесь означал бы худшего в нише.
-    expect(revenue?.percentile).toBeNull();
-    expect(revenue?.ranked).toBe(1);
-    expect(fees?.percentile).not.toBeNull();
-    expect(fees?.ranked).toBe(3);
-    expect(only?.comparisonAvailable).toBe(true);
+    expect(positions.get('large')).toMatchObject({
+      rankInSector: 1,
+      alphaStatus: 'sector_not_saturated',
+      alphaQualified: false,
+    });
   });
 });

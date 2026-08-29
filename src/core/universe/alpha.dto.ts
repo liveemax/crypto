@@ -52,12 +52,19 @@ export class SectorPercentileDto {
   })
   percentile!: number | null;
   @ApiProperty({ example: 6 }) ranked!: number;
+  @ApiProperty({ nullable: true, example: 'https://defillama.com/protocol/aave' }) sourceUrl!: string | null;
+  @ApiProperty({ nullable: true, example: '2026-08-29T00:00:00.000Z' }) asOf!: string | null;
 }
 
 export class AlphaViewDto {
   @ApiProperty({ example: 10 }) sectorSize!: number;
   @ApiProperty({ nullable: true, example: 1 }) rankInSector!: number | null;
-  @ApiProperty({ nullable: true, example: 82.99 }) sectorScore!: number | null;
+  @ApiProperty({ nullable: true, example: 82.99 }) businessScaleScore!: number | null;
+  @ApiProperty({ nullable: true, example: 1 }) tvlRank!: number | null;
+  @ApiProperty({ nullable: true, example: 1 }) revenueRank!: number | null;
+  @ApiProperty({ example: 6 }) tvlRanked!: number;
+  @ApiProperty({ example: 6 }) revenueRanked!: number;
+  @ApiProperty({ nullable: true, example: 42.1 }) tvlSharePct!: number | null;
   @ApiProperty({ type: SectorPercentileDto, isArray: true })
   percentiles!: SectorPercentileDto[];
   @ApiProperty({
@@ -67,6 +74,8 @@ export class AlphaViewDto {
   })
   revenueSharePct!: number | null;
   @ApiProperty({ example: true }) comparisonAvailable!: boolean;
+  @ApiProperty({ example: true }) alphaQualified!: boolean;
+  @ApiProperty({ enum: ['sector_leader', 'outranked', 'insufficient_data', 'sector_not_saturated', 'missing_sector'] }) alphaStatus!: string;
   @ApiProperty({
     enum: DECISIONS,
     example: 'kept_top_n',

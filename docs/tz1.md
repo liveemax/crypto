@@ -237,6 +237,24 @@ final   = clamp(base - flagPenalty, 0, 100)
 
 ### Обязательная приёмка
 
+#### Запросы, которые пользователь передаёт Codex
+
+Выполнить в Swagger после реализации шага:
+
+1. `GET /config/profiles` — передать HTTP-статус и один профиль целиком. В
+   профиле не должно быть `llmAgents`.
+2. `GET /api/openapi.json` — передать только найденные совпадения по словам
+   `llm`, `anthropic`, `agent`, `mechanism`, `critic`, `debug`, `analysis`. Для
+   успешной приёмки список LLM/debug paths должен быть пустым. До шага 13
+   `mechanism` ещё может встретиться только как старый ключ весов; это нужно
+   отдельно отметить, но не принимать за живой endpoint.
+3. `GET /agents`, `POST /debug/llm-ping` с телом `{}` и
+   `POST /analysis/mechanism/AAVE` с телом `{}` — передать статус и тело каждого
+   ответа. Ожидается нормализованный `404`, а не HTML и не stack trace.
+
+В Codex вставить ответы одним сообщением с заголовком
+`РУЧНАЯ ПРИЁМКА ШАГА 11.5A`. Секреты и полный OpenAPI-файл не отправлять.
+
 - [ ] `rg -ni "anthropic|llmAgents|AGENT_NAMES|BaseAgent|AgentResult|ANTHROPIC_API_KEY" src test package.json .env.example` не находит живого кода.
 - [ ] Swagger не содержит LLM/debug/analysis paths.
 - [ ] Удалённые LLM paths отвечают `404`, если они раньше существовали.
@@ -281,6 +299,21 @@ final   = clamp(base - flagPenalty, 0, 100)
 игнорируемом `reports/` и прикладывается ссылкой в ответе Codex.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+До начала шага выполнить:
+
+1. `GET /status` — передать полный JSON.
+2. `GET /universe?offset=0&limit=1&view=summary` — передать `context` и
+   `pagination`; саму тяжёлую строку можно не копировать.
+3. `GET /universe/coverage` — передать полный JSON покрытия.
+
+Если `status.job.state` показывает работающую задачу, повторять только
+`GET /status` до конечного состояния и передать последний ответ. В сообщении
+Codex отдельно написать, какой профиль считать baseline (`deep-value` по
+умолчанию). Если любой запрос отвечает, что вселенной нет, сначала нужен
+`POST /universe/refresh`, а шаг получает статус `BLOCKED` до окончания задачи.
 
 - [ ] Все числа в отчёте имеют общий `universeVersion`, `builtAt` и профиль.
 - [ ] Четыре комбинации фильтров посчитаны из одного снимка.
@@ -329,6 +362,27 @@ final   = clamp(base - flagPenalty, 0, 100)
 `NOSRC` (правдоподобно большие числа без provenance), `MISSING_AXIS`.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+Выполнить последовательно:
+
+1. `POST /universe/screen` с телом `{"enabled": false}`.
+2. `POST /universe/alpha` с телом
+   `{"enabled": true, "profileId": "deep-value"}`.
+3. `POST /evaluation/run` с телом
+   `{"profileId": "deep-value", "refresh": true}`.
+4. `GET /evaluation/latest?offset=0&limit=50&view=full`.
+5. `GET /universe/data-gaps?offset=0&limit=50`.
+6. Выбрать из ответа одного `sector_leader` и одного
+   `insufficient_data`, затем выполнить `GET /evaluation/{token}` для каждого.
+7. Выключить alpha: `POST /universe/alpha` с телом `{"enabled": false}`;
+   повторить `POST /evaluation/run` с `refresh:true` и
+   `GET /evaluation/{token}` для прежнего лидера.
+
+Передать Codex: ответы POST, обе карточки, `context`, `inputCount`, alpha status,
+rank/score, provenance двух осей и карточку лидера после выключения alpha.
+Полный список из сотен строк не передавать.
 
 - [ ] LARGE получает rank 1 и лучший `businessScaleScore`.
 - [ ] NOSRC не получает score и не меняет перцентили остальных.
@@ -381,6 +435,27 @@ final   = clamp(base - flagPenalty, 0, 100)
 
 ### Обязательная приёмка
 
+#### Запросы, которые пользователь передаёт Codex
+
+Выполнить на полной вселенной без фильтров:
+
+1. `POST /universe/screen` — `{"enabled": false}`.
+2. `POST /universe/alpha` — `{"enabled": false}`.
+3. `POST /evaluation/run` —
+   `{"profileId": "deep-value", "refresh": true}`.
+4. `GET /evaluation/latest?offset=0&limit=200&view=summary`.
+
+В summary найти одну `comparisonGroup`, где минимум три строки имеют valuation.
+Внутри неё выбрать:
+
+- токен с лучшим `businessScaleScore`;
+- другой токен с лучшим `valuation.score`.
+
+Для обоих выполнить `GET /evaluation/{token}` и передать Codex полные ответы.
+Если такого расхождения в живых данных нет, передать summary выбранной группы и
+написать `ЖИВОГО КЕЙСА LARGE/CHEAP НЕТ`; это не заменяет обязательную тестовую
+фикстуру и не разрешает придумывать пример.
+
 - [ ] LARGE остаётся лидером business scale, CHEAP получает лучший valuation.
 - [ ] NOSRC не влияет на собственный score и перцентили остальных.
 - [ ] Одна ось или вес `<0.60` → `score:null` с конкретным `missing`.
@@ -421,6 +496,27 @@ Swagger без старых полей и без неверного reuse.
 
 ### Обязательная приёмка
 
+#### Запросы, которые пользователь передаёт Codex
+
+Проверить четыре состояния. После настройки каждого состояния выполнить
+`POST /evaluation/run` с телом
+`{"profileId": "deep-value", "refresh": true}` и сохранить ответ.
+
+| Состояние | `POST /universe/screen` | `POST /universe/alpha` |
+|---|---|---|
+| off/off | `{"enabled":false}` | `{"enabled":false}` |
+| on/off | `{"enabled":true,"profileId":"deep-value"}` | `{"enabled":false}` |
+| off/on | `{"enabled":false}` | `{"enabled":true,"profileId":"deep-value"}` |
+| on/on | `{"enabled":true,"profileId":"deep-value"}` | `{"enabled":true,"profileId":"deep-value"}` |
+
+Для состояния on/on сразу повторить `POST /evaluation/run` без `refresh`, затем
+выключить только alpha и снова выполнить run без `refresh`. Передать Codex из
+каждого ответа: `context.activeFilters`, `inputCount`, `evaluatedCount`,
+`inputHashes`, `reuse`, `pagination.total`, formula versions и warnings.
+Дополнительно передать ответ
+`GET /evaluation/latest?offset=0&limit=50&view=summary` и фактический размер
+этого ответа в байтах.
+
 - [ ] Неизменный ввод повторно использует совместимые компоненты.
 - [ ] Смена любого фильтра: tokenomics reused, два comparative компонента
       recomputed.
@@ -456,6 +552,21 @@ baseline. Если их нет — `BLOCKED` до правок.
   ответа и подтверждение страницы.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+1. `GET /status` — полный JSON перед началом измерения.
+2. Для каждой из четырёх комбинаций из шага 12.3 выполнить
+   `POST /evaluation/run` с `{"profileId":"deep-value","refresh":true}`.
+3. `GET /evaluation/latest?offset=0&limit=200&view=summary` — передать context,
+   pagination и распределение score/null, а не весь массив, если он большой.
+4. Для выбранных LARGE и CHEAP выполнить `GET /evaluation/{token}`.
+5. Открыть `sourceUrl` TVL и revenue лидера в браузере и передать Codex четыре
+   значения: URL, `asOf`, число из API, подтверждает ли открытая страница это
+   число или исходный ряд.
+
+В сообщении обязательно указать один общий `universeVersion`, `builtAt`, профиль
+и active filters. Ответы от разных снимков смешивать нельзя.
 
 - [ ] Все измерения называют `universeVersion`, `builtAt`, profile и filters.
 - [ ] Лидер масштаба подтверждён TVL и revenue; дешёвый конкурент выигрывает
@@ -500,6 +611,21 @@ baseline. Если их нет — `BLOCKED` до правок.
    реализуется сразу с реальным потребителем в шаге 15.1.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+1. `GET /config/thresholds` — передать полный JSON.
+2. `GET /config/profiles` — передать один профиль целиком и список ключей
+   `weights` у всех профилей.
+3. Скопировать полученный профиль без изменений в
+   `POST /universe/screen` с телом
+   `{"enabled":true,"profile":<ПОЛУЧЕННЫЙ_ПРОФИЛЬ>}`; передать статус и тело.
+4. `POST /evaluation/run` —
+   `{"profileId":"deep-value","refresh":true}`.
+5. `GET /evaluation/latest?offset=0&limit=1&view=full` — передать полный ответ.
+
+Codex должен увидеть три точных веса, сумму `1`, отсутствие `llmAgents` и
+`mechanism` как весового компонента, а также `notEvaluated` в evaluation.
 
 - [ ] Поиск старых весов и LLM-ключей пуст.
 - [ ] Сумма весов валидируется как `1`.
@@ -546,6 +672,27 @@ baseline. Если их нет — `BLOCKED` до правок.
 
 ### Обязательная приёмка
 
+#### Запросы, которые пользователь передаёт Codex
+
+Для `<TOKEN>` использовать реальный тикер или `coingeckoId`. Для успешной записи
+нужны настоящий официальный `<SOURCE_URL>` и дата этого источника
+`<SOURCE_AS_OF>`; тестовое выдуманное происхождение сохранять нельзя.
+
+1. `POST /manual/overrides/<TOKEN>`:
+   `{"incentives12mUsd":1200000,"sourceUrl":"<SOURCE_URL>","asOf":"<SOURCE_AS_OF>"}`.
+2. `GET /manual/overrides/<TOKEN>` — передать полный ответ.
+3. Повторить GET по второй форме идентификатора: ticker и `coingeckoId` должны
+   вернуть одну запись.
+4. Негативный запрос без ссылки:
+   `POST /manual/overrides/<TOKEN>` с
+   `{"incentives12mUsd":1200000,"asOf":"<SOURCE_AS_OF>"}`.
+5. Негативный запрос с `incentives12mUsd:-1` и валидными source/asOf.
+6. Только если официальный источник подтверждает нулевые стимулы — запрос с
+   `incentives12mUsd:0`. Ноль ради теста в рабочие данные не записывать.
+
+Передать Codex HTTP-статус и тело всех ответов, отдельно отметив поведение
+повторной записи: replace или новая версия.
+
 - [ ] Валидная запись читается по ticker и `coingeckoId` как один объект.
 - [ ] Неоднозначный ticker → `409` со списком; неизвестный → нормализованная 4xx.
 - [ ] Без `sourceUrl`, без `asOf`, с неверным URL/датой или отрицательным числом
@@ -582,6 +729,22 @@ penalty и provenance входной метрики. Флаг и штраф на
 CandidateEvaluation как `riskFlags` и `flagPenalty`; это не четвёртый компонент.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+1. `POST /evaluation/run` —
+   `{"profileId":"deep-value","refresh":true}`.
+2. `GET /evaluation/latest?offset=0&limit=200&view=full`.
+3. Из ответа выбрать по одному реальному кандидату с `high_turnover`,
+   `illiquid` и без известного `turnoverPct`, если такие строки есть.
+4. Для каждого выбранного выполнить `GET /evaluation/{token}`.
+5. Если в шаге 14.1 был сохранён подтверждённый incentives override, повторить
+   run и `GET /evaluation/{token}` для него.
+
+Передать Codex только выбранные карточки и их metrics, `riskFlags`,
+`flagPenalty`, `missing`, notes и provenance. Границы ровно 50/0.5 и cap штрафа
+20 проверяются unit-тестами Codex; ради них пользователь не подделывает runtime
+данные и не создаёт ручные значения без источника.
 
 - [ ] Текст high_turnover/illiquid содержит то же число, что входной metric.
 - [ ] Ровно 50 и 0.5 не срабатывают; границы закреплены тестом.
@@ -632,6 +795,19 @@ ranking run поверх совместимой evaluation; публичного
 
 ### Обязательная приёмка
 
+#### Запросы, которые пользователь передаёт Codex
+
+На этом шаге публичного ranking endpoint ещё нет, поэтому ручных ranking
+запросов быть не должно. Для входа внутренней приёмки передать Codex:
+
+1. ответ `POST /evaluation/run` с
+   `{"profileId":"deep-value","refresh":true}`;
+2. ответ `GET /evaluation/latest?offset=0&limit=3&view=full`;
+3. ответ `GET /status` из того же состояния фильтров.
+
+Если `/ranking/run` уже появился в Swagger до шага 15.2, передать этот факт как
+нарушение границы шага: контроллер нужно убрать из 15.1, а не принимать раньше.
+
 - [ ] Один компонент → composite null, tier C; не A и не ноль.
 - [ ] Два/три компонента дают ожидаемый weighted mean и metadata.
 - [ ] Penalty не опускает итог ниже 0.
@@ -668,6 +844,25 @@ Watchlist не прячется и учитывается в totals отдель
 детерминирован, но API не объявляет его точным инвестиционным рангом.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+Для каждой из четырёх комбинаций фильтров из шага 12.3 выполнить:
+
+1. соответствующие `POST /universe/screen` и `POST /universe/alpha`;
+2. `POST /ranking/run` с `{"profileId":"deep-value"}`;
+3. `GET /ranking/latest?offset=0&limit=50&view=summary`.
+
+Для одного состояния дополнительно выполнить:
+
+- `GET /ranking/latest?offset=0&limit=1&view=full`;
+- `GET /ranking/latest?offset=0&limit=201&view=summary` — ожидается 4xx;
+- `POST /ranking/run` с несуществующим `profileId` — ожидается 4xx.
+
+Передать Codex: HTTP-статусы, `evaluationRecomputed`, context, totals по A/B/C и
+watchlist, pagination, один summary item, один full item, размер default ответа
+в байтах и оба негативных ответа. Проверить, что POST не возвращает `jobId` и
+не меняет `GET /status.job`.
 
 - [ ] POST отвечает 200, не 202, не возвращает jobId и не занимает JobService.
 - [ ] Нет evaluation → POST сам создаёт её и сообщает это.
@@ -709,6 +904,22 @@ Watchlist не прячется и учитывается в totals отдель
    composite. Повторное чтение/повторная запись не дублирует run.
 
 ### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+1. Дважды выполнить `POST /ranking/run` с
+   `{"profileId":"deep-value"}` и сохранить два разных `runId`.
+2. `GET /ranking/report/<RUN_ID_1>` и
+   `GET /ranking/report/<RUN_ID_2>` — передать HTTP-статус, заголовок
+   `Content-Type` и первые/последние 30 строк каждого markdown.
+3. `GET /ranking/report/not-existing-run` — передать статус и тело ошибки.
+4. `GET /evaluation/latest?offset=0&limit=1&view=full` и
+   `GET /ranking/latest?offset=0&limit=1&view=full` — передать фрагменты с
+   дисклеймером.
+
+Полные многостраничные отчёты в сообщение Codex вставлять не нужно. Codex сам
+проверяет `reports/journal.md`; пользователь передаёт только два runId, чтобы
+проверить отсутствие перезаписи и дублей.
 
 - [ ] Два run в один день имеют разные URL и содержимое не перезаписано.
 - [ ] Неизвестный runId → нормализованная 404 с nextAction.
@@ -757,6 +968,21 @@ missing components и flag penalties в сценариях не меняются
 
 ### Обязательная приёмка
 
+#### Запросы, которые пользователь передаёт Codex
+
+1. `GET /ranking/latest?offset=0&limit=1&view=summary` — сохранить исходный
+   `runId` и baseline кандидата.
+2. `POST /ranking/sensitivity` с телом `{"runId":"<RUN_ID>"}`.
+3. Повторить тот же sensitivity-запрос второй раз.
+4. Снова выполнить `GET /ranking/latest?offset=0&limit=1&view=summary`.
+5. `POST /ranking/sensitivity` с
+   `{"runId":"not-existing-run"}` — ожидается нормализованная 4xx.
+
+Передать Codex: оба sensitivity-ответа либо их хеши и summary, количество
+сценариев, baseline weights, один candidate result, transition matrix,
+interpretation, runId ranking до/после и негативный ответ. RunId ranking до и
+после должен совпадать.
+
 - [ ] Ровно 25 уникальных нормированных наборов, сумма каждого равна 1.
 - [ ] Baseline совпадает с сохранённым ranking в пределах правила округления.
 - [ ] Missing score не превращается в ноль ни в одном сценарии.
@@ -793,7 +1019,35 @@ missing components и flag penalties в сценариях не меняются
 `POST /evaluation/run` необязателен: ranking умеет пересчитать evaluation сам.
 Ручной обход токенов, обязательные overrides и документы не допускаются.
 
-### Сквозная приёмка
+### Обязательная приёмка
+
+#### Запросы, которые пользователь передаёт Codex
+
+Выполнить основной сценарий в Swagger. После любого `202` опрашивать только
+`GET /status` до `done` или `failed` и передать конечный status.
+
+1. `GET /status` — исходное состояние.
+2. `POST /universe/prices` с пустым телом `{}`.
+3. При устаревшей/отсутствующей tokenomics:
+   `POST /universe/tokenomics` с `{"force":false}`.
+4. Проверить четыре комбинации screen/alpha из шага 12.3; в каждой выполнить
+   `POST /ranking/run` с `{"profileId":"deep-value"}`.
+5. Для последнего run выполнить:
+   `GET /ranking/latest?offset=0&limit=50&view=summary`,
+   `GET /ranking/latest?offset=0&limit=1&view=full`,
+   `GET /ranking/report/<RUN_ID>` и
+   `POST /ranking/sensitivity` с `{"runId":"<RUN_ID>"}`.
+6. Выполнить по одному заведомо неверному запросу:
+   `GET /ranking/report/not-existing-run` и
+   `GET /ranking/latest?limit=201`; передать обе ошибки.
+7. Открыть одну ссылку valuation и одну ссылку tokenomics из full/report и
+   записать, какое число или событие подтверждено.
+
+Передать Codex один пакет `РУЧНАЯ ПРИЁМКА ШАГА 16.3`: последовательность
+метод/путь/статус, конечные status, context каждого run, четыре inputCount,
+totals тиров, response sizes, Content-Type отчёта, число sensitivity scenarios,
+две ошибки и результаты ручной проверки ссылок. API-ключи, заголовки
+авторизации и многомегабайтные полные ответы не передавать.
 
 - [ ] screen on/alpha on → evaluation input равен `status.passed`.
 - [ ] Остальные три комбинации фильтров работают и не включаются сами.

@@ -1,10 +1,18 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { conflict, NEXT, notFound } from '../errors';
 import { StoreService } from '../store/store.service';
 import { UniverseService } from '../universe/universe.service';
-import type { ManualUnlockInput, ManualUnlockRecord } from './manual.types';
+import type {
+  ManualIncentiveOverrideInput,
+  ManualIncentiveOverrideLookup,
+  ManualIncentiveOverrideRecord,
+  ManualUnlockInput,
+  ManualUnlockRecord,
+} from './manual.types';
 
 const UNLOCKS_STATE = 'manual-unlocks';
+const OVERRIDES_STATE = 'manual-incentive-overrides';
 const CATEGORIES = ['team', 'investors', 'community', 'ecosystem', 'other', 'unknown'];
 
 @Injectable()
@@ -60,8 +68,73 @@ export class ManualService {
     return grouped;
   }
 
+  /** Сохраняет override стимулов; повторная запись по тому же токену заменяет предыдущую. */
+  async setIncentiveOverride(
+    token: string,
+    input: ManualIncentiveOverrideInput,
+  ): Promise<ManualIncentiveOverrideRecord> {
+    const identity = await this.resolveIdentity(token);
+    const record: ManualIncentiveOverrideRecord = {
+      incentives12mUsd: nonNegativeOrFail(input.incentives12mUsd),
+      sourceUrl: urlOrFail(input.sourceUrl),
+      asOf: isoOrFail(input.asOf, 'asOf'),
+      coingeckoId: identity.coingeckoId,
+      ticker: identity.ticker,
+      origin: 'manual',
+      createdAt: new Date().toISOString(),
+    };
+    const all = await this.overridesById();
+    all.set(record.coingeckoId, record);
+    await this.store.saveState(OVERRIDES_STATE, Object.fromEntries(all));
+    return record;
+  }
+
+  /** Override стимулов одного токена; отсутствие записи — законное состояние, не ошибка. */
+  async incentiveOverride(token: string): Promise<ManualIncentiveOverrideLookup> {
+    const identity = await this.resolveIdentity(token);
+    const all = await this.overridesById();
+    return { ...identity, override: all.get(identity.coingeckoId) ?? null };
+  }
+
+  private async overridesById(): Promise<Map<string, ManualIncentiveOverrideRecord>> {
+    const stored = await this.store.loadState<Record<string, ManualIncentiveOverrideRecord>>(
+      OVERRIDES_STATE,
+    );
+    return new Map(Object.entries(stored ?? {}));
+  }
+
   private async all(): Promise<ManualUnlockRecord[]> {
     return (await this.store.loadState<ManualUnlockRecord[]>(UNLOCKS_STATE)) ?? [];
+  }
+
+  /**
+   * Тикер не идентификатор: неоднозначность и отсутствие в снимке различаются
+   * кодом ошибки, а не общим 404. Использует активную композицию вселенной, а
+   * не сырой снимок — override можно сохранить для любого известного актива.
+   */
+  private async resolveIdentity(token: string): Promise<{ coingeckoId: string; ticker: string }> {
+    const { matches } = await this.universe.resolve(token);
+    if (matches.length > 1) {
+      throw conflict(
+        'ambiguous_ticker',
+        `Тикер ${token} принадлежит нескольким активам: тикер не идентификатор.`,
+        {
+          requested: token,
+          candidates: matches.map((item) => ({ coingeckoId: item.coingeckoId, name: item.name })),
+        },
+        { method: 'GET', path: `/manual/overrides/${matches[0].coingeckoId}`, body: {} },
+      );
+    }
+    const one = matches[0];
+    if (!one) {
+      throw notFound(
+        'token_unknown',
+        `${token} не найден во вселенной: ручной override можно сохранить только для существующего актива.`,
+        { requested: token },
+        NEXT.buildUniverse,
+      );
+    }
+    return { coingeckoId: one.coingeckoId, ticker: one.ticker };
   }
 
   /** Тикер не идентификатор: символ, встреченный дважды, — отказ, а не выбор большего. */
@@ -112,6 +185,16 @@ function isoOrFail(value: string, field: string): string {
 function positiveOrFail(value: number): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new BadRequestException('tokens должен быть положительным числом токенов, не строкой');
+  }
+  return value;
+}
+
+function nonNegativeOrFail(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new BadRequestException(
+      'incentives12mUsd должен быть числом ≥ 0: неизвестное значение — это отсутствие ' +
+        'override, а не отрицательное число',
+    );
   }
   return value;
 }

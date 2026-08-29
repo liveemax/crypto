@@ -1,9 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsISO8601, IsNumber, IsPositive, IsString, IsUrl } from 'class-validator';
+import { IsIn, IsISO8601, IsNumber, IsPositive, IsString, IsUrl, Min } from 'class-validator';
 import { ManualService } from '../core/manual/manual.service';
-import type { ManualUnlockRecord } from '../core/manual/manual.types';
+import type {
+  ManualIncentiveOverrideLookup,
+  ManualIncentiveOverrideRecord,
+  ManualUnlockRecord,
+} from '../core/manual/manual.types';
 
 const CATEGORIES = ['team', 'investors', 'community', 'ecosystem', 'other', 'unknown'];
 
@@ -46,6 +50,48 @@ export class ManualUnlockRecordDto extends ManualUnlockDto {
   @ApiProperty({ example: '2026-08-27T09:12:00.000Z' }) createdAt!: string;
 }
 
+export class ManualIncentiveOverrideDto {
+  @ApiProperty({
+    example: 1_200_000,
+    description: 'Стоимость раздаваемых токенов за 12 месяцев в USD. Подтверждённый ноль допустим',
+  })
+  @IsNumber()
+  @Min(0)
+  incentives12mUsd!: number;
+
+  @ApiProperty({
+    example: 'https://official.example/report',
+    description: 'Обязательна и только http/https: число без источника обнуляется валидатором',
+  })
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  sourceUrl!: string;
+
+  @ApiProperty({
+    example: '2026-08-01T00:00:00.000Z',
+    description: 'Дата документа-источника, а не время этого запроса',
+  })
+  @IsISO8601()
+  asOf!: string;
+}
+
+export class ManualIncentiveOverrideRecordDto extends ManualIncentiveOverrideDto {
+  @ApiProperty({ example: 'hyperliquid' }) coingeckoId!: string;
+  @ApiProperty({ example: 'HYPE' }) ticker!: string;
+  @ApiProperty({ example: 'manual', enum: ['manual'] }) origin!: 'manual';
+  @ApiProperty({ example: '2026-08-27T09:12:00.000Z' }) createdAt!: string;
+}
+
+export class ManualIncentiveOverrideLookupDto {
+  @ApiProperty({ example: 'hyperliquid' }) coingeckoId!: string;
+  @ApiProperty({ example: 'HYPE' }) ticker!: string;
+  @ApiProperty({
+    type: ManualIncentiveOverrideRecordDto,
+    nullable: true,
+    description: 'null — override для этого токена не сохранён; это законное состояние',
+  })
+  override!: ManualIncentiveOverrideRecord | null;
+}
+
 @ApiTags('manual')
 @Controller('manual')
 export class ManualController {
@@ -80,5 +126,33 @@ export class ManualController {
   async remove(@Param('id') id: string): Promise<{ deleted: string }> {
     await this.manual.removeUnlock(id);
     return { deleted: id };
+  }
+
+  @Post('overrides/:token')
+  @ApiOperation({
+    summary: 'Сохранить ручной override стимулов [advanced]',
+    description:
+      'Стоимость раздаваемых токенов не приходит ни из CoinGecko, ни из сводок ' +
+      'DeFiLlama. sourceUrl и asOf обязательны; подтверждённый ноль отличается от ' +
+      'неизвестного значения, которое остаётся null и попадает в missing.\n\n' +
+      'Повторная запись по тому же токену заменяет предыдущую: хранится ровно ' +
+      'одна актуальная запись, а не история версий.',
+  })
+  @ApiOkResponse({ type: ManualIncentiveOverrideRecordDto })
+  async setOverride(
+    @Param('token') token: string,
+    @Body() body: ManualIncentiveOverrideDto,
+  ): Promise<ManualIncentiveOverrideRecord> {
+    return this.manual.setIncentiveOverride(token, body);
+  }
+
+  @Get('overrides/:token')
+  @ApiOperation({
+    summary: 'Ручной override стимулов одного токена',
+    description: 'Записи нет — законное состояние: override: null, а не ошибка.',
+  })
+  @ApiOkResponse({ type: ManualIncentiveOverrideLookupDto })
+  async getOverride(@Param('token') token: string): Promise<ManualIncentiveOverrideLookup> {
+    return this.manual.incentiveOverride(token);
   }
 }

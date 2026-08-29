@@ -367,7 +367,8 @@ describe('Приёмка шага 10: массовая кодовая оценк
     const twoAxes = run.candidates.find((item) => item.ticker === 'TWO')!;
     const threeAxes = run.candidates.find((item) => item.ticker === 'THREE1')!;
 
-    expect(twoAxes.valuation.score).toBe(threeAxes.valuation.score);
+    expect(twoAxes.valuation.score).toBe(50);
+    expect(threeAxes.valuation.score).toBe(50);
     expect(twoAxes.valuation.verdict).toMatchObject({
       availableMetrics: ['pRev', 'fdvRev'],
       availableWeight: 0.6,

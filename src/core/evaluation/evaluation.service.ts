@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { BUILTIN_PROFILES, DEFAULT_PROFILE, getProfile } from '../../config/profiles';
 import { add, div, round } from '../money';
 import { StoreService } from '../store/store.service';
-import { sectorPositions } from '../universe/alpha';
+import { businessScalePositions } from '../universe/alpha';
 import type { SectorPosition } from '../universe/alpha';
 import type { AlphaConfig, AnalysisProfile } from '../universe/profile.types';
 import { UniverseService } from '../universe/universe.service';
@@ -321,7 +321,7 @@ export class EvaluationService {
   ): Map<string, SectorPosition | null> {
     const positions = new Map<string, SectorPosition | null>();
     const outliers: string[] = [];
-    for (const [id, position] of sectorPositions(selection, rankBy)) {
+    for (const [id, position] of businessScalePositions(selection, rankBy)) {
       positions.set(id, position);
     }
     if (outliers.length > 0) {

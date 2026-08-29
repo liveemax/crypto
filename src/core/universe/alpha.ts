@@ -54,9 +54,6 @@ export function businessScalePositions(
   return result;
 }
 
-/** Совместимое имя для внутренних вызовов: формула при этом существует ровно одна. */
-export const sectorPositions = businessScalePositions;
-
 /** Оставляет top-N сравнимых только в перенасыщенной нише. */
 export function applyAlpha(candidates: CandidateView[], config: AlphaConfig): AlphaOutcome {
   const input = candidates.filter((candidate) => candidate.passed);
@@ -75,10 +72,11 @@ export function applyAlpha(candidates: CandidateView[], config: AlphaConfig): Al
   for (const [group, members] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
     const saturated = members.length > config.perSector;
     let kept = 0;
-    let ranked = 0;
+    const ranked = members.filter(
+      (candidate) => positions.get(candidate.coingeckoId)?.businessScaleScore !== null,
+    ).length;
     for (const candidate of members) {
       const position = positions.get(candidate.coingeckoId)!;
-      if (position.businessScaleScore !== null) ranked += 1;
       const decision = decisionOf(saturated, position.rankInSector, config.perSector);
       const alphaStatus = statusOf(saturated, position.rankInSector, config.perSector);
       const view: AlphaView = {
@@ -181,8 +179,17 @@ function positionGroup(members: CandidateView[], config: AlphaConfig): Positione
       tvlSharePct: row.tvlSharePct,
       revenueSharePct: row.revenueSharePct,
       comparisonAvailable: row.businessScaleScore !== null,
-      alphaQualified: (ranks.get(row.candidate.coingeckoId) ?? Infinity) <= config.perSector,
-      alphaStatus: row.businessScaleScore === null ? 'insufficient_data' : (ranks.get(row.candidate.coingeckoId) ?? Infinity) <= config.perSector ? 'sector_leader' : 'outranked',
+      alphaQualified:
+        members.length > config.perSector &&
+        (ranks.get(row.candidate.coingeckoId) ?? Infinity) <= config.perSector,
+      alphaStatus:
+        row.businessScaleScore === null
+          ? 'insufficient_data'
+          : members.length <= config.perSector
+            ? 'sector_not_saturated'
+            : (ranks.get(row.candidate.coingeckoId) ?? Infinity) <= config.perSector
+              ? 'sector_leader'
+              : 'outranked',
       percentiles: row.percentiles,
       peers: peers.filter((ticker) => ticker !== row.candidate.ticker).slice(0, MAX_PEERS),
     },

@@ -1,4 +1,4 @@
-import type { AlphaDecision } from './alpha.types';
+import type { AlphaDecision, AlphaStatus } from './alpha.types';
 import type { AssetArchetype, DataState } from './comparison.types';
 import type { TokenomicsDataState } from '../tokenomics/tokenomics.types';
 import type { CandidateView, Tier } from './universe.types';
@@ -21,6 +21,7 @@ export interface UniverseSummaryRow {
   vol24hUsd: number | null;
   turnoverPct: number | null;
   floatPct: number | null;
+  tvlUsd: number | null;
 
   revenue12mUsd: number | null;
   holdersRevenue12mUsd: number | null;
@@ -42,8 +43,17 @@ export interface UniverseSummaryRow {
 
   /** Место в нише числом. Сами перцентили — в view=full. */
   alphaDecision: AlphaDecision | null;
+  alphaStatus: AlphaStatus | null;
+  alphaQualified: boolean | null;
+  businessScaleScore: number | null;
   rankInSector: number | null;
   sectorSize: number | null;
+  tvlRank: number | null;
+  revenueRank: number | null;
+  tvlRanked: number | null;
+  revenueRanked: number | null;
+  tvlSharePct: number | null;
+  revenueSharePct: number | null;
 }
 
 export function summaryOf(candidate: CandidateView): UniverseSummaryRow {
@@ -60,6 +70,7 @@ export function summaryOf(candidate: CandidateView): UniverseSummaryRow {
     vol24hUsd: candidate.vol24hUsd,
     turnoverPct: candidate.turnoverPct,
     floatPct: candidate.floatPct,
+    tvlUsd: candidate.tvlUsd,
 
     revenue12mUsd: candidate.revenue12mUsd,
     holdersRevenue12mUsd: candidate.holdersRevenue12mUsd,
@@ -80,7 +91,16 @@ export function summaryOf(candidate: CandidateView): UniverseSummaryRow {
     rejectReason: candidate.rejectReason,
 
     alphaDecision: candidate.alpha?.decision ?? null,
+    alphaStatus: candidate.alpha?.alphaStatus ?? null,
+    alphaQualified: candidate.alpha?.alphaQualified ?? null,
+    businessScaleScore: candidate.alpha?.businessScaleScore ?? null,
     rankInSector: candidate.alpha?.rankInSector ?? null,
     sectorSize: candidate.alpha?.sectorSize ?? null,
+    tvlRank: candidate.alpha?.tvlRank ?? null,
+    revenueRank: candidate.alpha?.revenueRank ?? null,
+    tvlRanked: candidate.alpha?.tvlRanked ?? null,
+    revenueRanked: candidate.alpha?.revenueRanked ?? null,
+    tvlSharePct: candidate.alpha?.tvlSharePct ?? null,
+    revenueSharePct: candidate.alpha?.revenueSharePct ?? null,
   };
 }

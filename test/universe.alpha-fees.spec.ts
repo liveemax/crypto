@@ -45,4 +45,17 @@ describe('Единый business scale', () => {
     expect(positions.get('one')?.percentiles.map((axis) => axis.percentile)).toEqual([null, null]);
     expect(positions.get('one')?.businessScaleScore).toBeNull();
   });
+
+  it('в ненасыщенной нише не объявляет участника alpha-лидером', () => {
+    const positions = businessScalePositions(
+      [member('LARGE', 3, 3), member('MID', 2, 2), member('SMALL', 1, 1)],
+      DEFAULT_PROFILE.alpha,
+    );
+
+    expect(positions.get('large')).toMatchObject({
+      rankInSector: 1,
+      alphaStatus: 'sector_not_saturated',
+      alphaQualified: false,
+    });
+  });
 });

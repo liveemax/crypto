@@ -225,6 +225,32 @@ describe('Приёмка шага 06: stateful alpha', () => {
     expect(gap?.missingMetrics).toEqual(['tvlUsd']);
   });
 
+  it('summary показывает business scale и причину отсутствия места', async () => {
+    await service.applyScreen({ enabled: true, profileId: 'default' });
+    await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
+
+    const page = await service.list({ limit: 50 });
+    const leader = page.items.find((item) => item.ticker === 'DX1');
+    const gap = page.items.find((item) => item.ticker === 'DX7');
+
+    expect(leader).toMatchObject({
+      tvlUsd: 1_000_000_000,
+      alphaStatus: 'sector_leader',
+      alphaQualified: true,
+      businessScaleScore: expect.any(Number),
+      rankInSector: 1,
+      tvlRanked: 6,
+      revenueRanked: 7,
+    });
+    expect(gap).toMatchObject({
+      alphaDecision: 'alpha_unrankable',
+      alphaStatus: 'insufficient_data',
+      alphaQualified: false,
+      businessScaleScore: null,
+      tvlRank: null,
+    });
+  });
+
   it('работает без screen: вход — весь снимок', async () => {
     const result = await service.applyAlphaFilter({ enabled: true, profileId: 'default' });
 

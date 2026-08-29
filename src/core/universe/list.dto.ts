@@ -15,6 +15,7 @@ export class UniverseSummaryRowDto {
   @ApiProperty({ nullable: true, example: 200_000_000 }) vol24hUsd!: number | null;
   @ApiProperty({ nullable: true, example: 5.33 }) turnoverPct!: number | null;
   @ApiProperty({ nullable: true, example: 93.75 }) floatPct!: number | null;
+  @ApiProperty({ nullable: true, example: 18_000_000_000 }) tvlUsd!: number | null;
 
   @ApiProperty({ nullable: true, example: 112_000_000 }) revenue12mUsd!: number | null;
   @ApiProperty({ nullable: true, example: 60_000_000 }) holdersRevenue12mUsd!: number | null;
@@ -37,8 +38,18 @@ export class UniverseSummaryRowDto {
   @ApiProperty({ nullable: true, example: null }) rejectReason!: string | null;
 
   @ApiProperty({ nullable: true, example: 'kept_top_n' }) alphaDecision!: string | null;
+  @ApiProperty({ nullable: true, enum: ['sector_leader', 'outranked', 'insufficient_data', 'sector_not_saturated', 'missing_sector'] })
+  alphaStatus!: string | null;
+  @ApiProperty({ nullable: true, example: true }) alphaQualified!: boolean | null;
+  @ApiProperty({ nullable: true, example: 91.67 }) businessScaleScore!: number | null;
   @ApiProperty({ nullable: true, example: 2 }) rankInSector!: number | null;
   @ApiProperty({ nullable: true, example: 9 }) sectorSize!: number | null;
+  @ApiProperty({ nullable: true, example: 1 }) tvlRank!: number | null;
+  @ApiProperty({ nullable: true, example: 2 }) revenueRank!: number | null;
+  @ApiProperty({ nullable: true, example: 8 }) tvlRanked!: number | null;
+  @ApiProperty({ nullable: true, example: 7 }) revenueRanked!: number | null;
+  @ApiProperty({ nullable: true, example: 42.3 }) tvlSharePct!: number | null;
+  @ApiProperty({ nullable: true, example: 31.8 }) revenueSharePct!: number | null;
 }
 
 /** Конверт списка кандидатов: голый массив не объясняет своё происхождение. */

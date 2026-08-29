@@ -58,4 +58,23 @@ describe('Единый business scale', () => {
       alphaQualified: false,
     });
   });
+
+  it('в ненасыщенной нише статус описывает отсутствие отбора даже без перцентилей', () => {
+    const rows = [member('SKY', 3, 3)];
+    const positions = businessScalePositions(rows, DEFAULT_PROFILE.alpha);
+
+    expect(positions.get('sky')).toMatchObject({
+      businessScaleScore: null,
+      rankInSector: null,
+      alphaStatus: 'sector_not_saturated',
+      alphaQualified: false,
+    });
+
+    applyAlpha(rows, DEFAULT_PROFILE.alpha);
+    expect(rows[0].alpha).toMatchObject({
+      decision: 'sector_not_saturated',
+      alphaStatus: 'sector_not_saturated',
+      businessScaleScore: null,
+    });
+  });
 });

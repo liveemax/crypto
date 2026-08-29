@@ -183,10 +183,10 @@ function positionGroup(members: CandidateView[], config: AlphaConfig): Positione
         members.length > config.perSector &&
         (ranks.get(row.candidate.coingeckoId) ?? Infinity) <= config.perSector,
       alphaStatus:
-        row.businessScaleScore === null
-          ? 'insufficient_data'
-          : members.length <= config.perSector
-            ? 'sector_not_saturated'
+        members.length <= config.perSector
+          ? 'sector_not_saturated'
+          : row.businessScaleScore === null
+            ? 'insufficient_data'
             : (ranks.get(row.candidate.coingeckoId) ?? Infinity) <= config.perSector
               ? 'sector_leader'
               : 'outranked',
@@ -215,7 +215,11 @@ function percentileOf(value: number, values: number[], minimum: number): number 
 
 function rankOf(value: number, values: number[]): number { return [...values].sort((a, b) => b - a).findIndex((item) => item === value) + 1; }
 function decisionOf(saturated: boolean, rank: number | null, perSector: number): AlphaDecision { return !saturated ? 'sector_not_saturated' : rank === null ? 'alpha_unrankable' : rank <= perSector ? 'kept_top_n' : 'alpha_outranked'; }
-function statusOf(saturated: boolean, rank: number | null, perSector: number): AlphaStatus { return rank === null ? 'insufficient_data' : !saturated ? 'sector_not_saturated' : rank <= perSector ? 'sector_leader' : 'outranked'; }
+function statusOf(saturated: boolean, rank: number | null, perSector: number): AlphaStatus {
+  if (!saturated) return 'sector_not_saturated';
+  if (rank === null) return 'insufficient_data';
+  return rank <= perSector ? 'sector_leader' : 'outranked';
+}
 
 function reasonOf(status: AlphaStatus, group: string, size: number, rank: number | null, ranked: number, config: AlphaConfig): string {
   if (status === 'sector_not_saturated') return `В секторе ${group} ${size} участников при пороге ${config.perSector}: отбирать не из чего`;

@@ -1,11 +1,11 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { BUILTIN_PROFILES, DEFAULT_PROFILE, getProfile } from '../../config/profiles';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { resolveProfile } from '../../config/profiles';
 import { ManualService } from '../manual/manual.service';
 import { add, div, round } from '../money';
 import { StoreService } from '../store/store.service';
 import { businessScalePositions } from '../universe/alpha';
 import type { SectorPosition } from '../universe/alpha';
-import type { AlphaConfig, AnalysisProfile } from '../universe/profile.types';
+import type { AlphaConfig } from '../universe/profile.types';
 import { UniverseService } from '../universe/universe.service';
 import type { CandidateView, UniverseView } from '../universe/universe.types';
 import { evaluateSectorPosition } from './sector-position';
@@ -57,7 +57,7 @@ export class EvaluationService {
     const previous = await this.store.loadRun<EvaluationRun>(STORE_KIND);
     if (previous === null) return null;
 
-    const profile = this.resolveProfile(previous.evaluationProfileId);
+    const profile = resolveProfile(previous.evaluationProfileId);
     const view = await this.universe.view();
     const selection = view.candidates.filter((candidate) => candidate.passed);
     const alphaOn = view.activeFilters.alpha.enabled && view.activeFilters.alpha.config !== null;
@@ -89,7 +89,7 @@ export class EvaluationService {
 
   /** Оценивает всю текущую выборку одним проходом: ни сети, ни слота задачи. */
   async run(request: EvaluationRunRequest = {}): Promise<EvaluationRunResponse> {
-    const profile = this.resolveProfile(request.profileId);
+    const profile = resolveProfile(request.profileId);
     const view = await this.universe.view();
     const selection = view.candidates.filter((candidate) => candidate.passed);
 
@@ -254,6 +254,15 @@ export class EvaluationService {
     };
   }
 
+  /**
+   * Последний сохранённый прогон целиком, без пагинации и без конверта.
+   * Для внутренних потребителей вроде ranking: им нужны все кандидаты разом,
+   * а не первые 200 из HTTP-ответа.
+   */
+  async latestRun(): Promise<EvaluationRun | null> {
+    return this.store.loadRun<EvaluationRun>(STORE_KIND);
+  }
+
   /** Последний сохранённый прогон страницами; расчёта не запускает. */
   async list(query: EvaluationListQuery = {}): Promise<EvaluationListResponse> {
     const run = await this.store.loadRun<EvaluationRun>(STORE_KIND);
@@ -373,18 +382,6 @@ export class EvaluationService {
       },
       items: query.view === 'full' ? page : page.map(summaryRow),
     };
-  }
-
-  private resolveProfile(id?: string): AnalysisProfile {
-    const wanted = id?.trim();
-    if (!wanted) return DEFAULT_PROFILE;
-    const profile = getProfile(wanted);
-    if (!profile) {
-      throw new BadRequestException(
-        `Неизвестный profileId: ${wanted}. Доступные: ${BUILTIN_PROFILES.map((item) => item.id).join(', ')}`,
-      );
-    }
-    return profile;
   }
 }
 

@@ -10,13 +10,13 @@ export type RevenueBasis = 'reported_1y' | 'run_rate_30d' | 'none';
 export type MatchSource = 'gecko_id' | 'chain' | 'override' | 'none';
 
 /**
- * Тир кандидата.
+ * Тир данных кандидата — не тир рейтинга (см. RankTier в core/ranking).
  * yield — выручка доходит до держателей токена, это цель системы;
  * economics — выручка есть, но до держателей не доходит или неизвестно;
  * pool — шлак-фильтр пройден, финансового источника нет;
  * rejected — отсеян.
  */
-export type Tier = 'yield' | 'economics' | 'pool' | 'rejected';
+export type DataTier = 'yield' | 'economics' | 'pool' | 'rejected';
 
 /**
  * Кандидат вселенной: все числа посчитаны кодом и снабжены ссылкой на источник.
@@ -89,7 +89,7 @@ export interface UniverseCandidate extends TokenomicsFields {
   fdvRev: number | null;
   revenuePerTvlPct: number | null;
 
-  tier: Tier;
+  tier: DataTier;
   passed: boolean;
   rejectedAt: string | null;
   rejectReason: string | null;
@@ -111,7 +111,7 @@ export interface FunnelReport {
   stages: FunnelStage[];
   passed: number;
   /** Распределение прошедших по тирам. */
-  tiers: Record<Tier, number>;
+  tiers: Record<DataTier, number>;
 }
 
 /**
@@ -169,7 +169,7 @@ export interface UniverseStatus {
   ageDays: number | null;
   total: number | null;
   passed: number | null;
-  tiers: Record<Tier, number> | null;
+  tiers: Record<DataTier, number> | null;
   /** Чем получены passed и tiers. Композиция независимых фильтров, а не одно имя. */
   activeFilters: ActiveFilterState;
   /** @deprecated Алиас activeFilters.screen.profileId. */
@@ -253,8 +253,8 @@ export interface CandidateRef {
 }
 
 export interface TierChange extends CandidateRef {
-  left: Tier;
-  right: Tier;
+  left: DataTier;
+  right: DataTier;
 }
 
 export interface UniverseCompareResult {
@@ -271,7 +271,7 @@ export interface UniverseCompareResult {
 /** Запрос списка кандидатов. Сортировка и фильтры — через query, а не на клиенте. */
 export interface UniverseListQuery extends PageQuery {
   passedOnly?: boolean;
-  tier?: Tier;
+  tier?: DataTier;
   sector?: string;
   sort?: 'rank' | 'holderYieldPct' | 'revenue12mUsd' | 'pRev';
   /** summary по умолчанию: percentiles и peers пятидесяти строк — половина веса ответа. */

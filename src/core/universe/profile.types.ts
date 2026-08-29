@@ -1,5 +1,4 @@
 import type { EvaluationComponentName, EvaluationWeights } from '../evaluation/evaluation.types';
-import type { Tier } from './universe.types';
 
 export const NUMERIC_FIELDS = [
   'mcapCalcUsd',

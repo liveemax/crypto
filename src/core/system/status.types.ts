@@ -1,7 +1,7 @@
 import type { NextAction } from '../errors';
 import type { JobSnapshot } from '../jobs/job.types';
 import type { ActiveFilterState } from '../universe/filter-state.types';
-import type { Tier } from '../universe/universe.types';
+import type { DataTier } from '../universe/universe.types';
 
 export interface UniverseFreshness {
   version: string | null;
@@ -22,7 +22,7 @@ export interface SelectionStatus {
   activeFilters: ActiveFilterState;
   total: number | null;
   passed: number | null;
-  dataTiers: Record<Tier, number> | null;
+  dataTiers: Record<DataTier, number> | null;
 }
 
 export interface EvaluationStatus {

@@ -1,7 +1,7 @@
 import type { Metric } from '../types';
 import type { PaginationInfo, ResponseContext } from '../envelope.types';
 import type { ActiveFilterState } from '../universe/filter-state.types';
-import type { Tier } from '../universe/universe.types';
+import type { DataTier } from '../universe/universe.types';
 
 /** Три компонента одной кодовой оценки. Это не агенты: ни сети, ни модели здесь нет. */
 export type EvaluationComponentName = 'valuation' | 'tokenomics' | 'sectorPosition';
@@ -76,7 +76,7 @@ export interface CandidateEvaluation {
   name: string;
   comparisonGroup: string | null;
   /** Тир данных: yield/economics/pool. НЕ тир рейтинга. */
-  dataTier: Tier;
+  dataTier: DataTier;
   valuation: EvaluationBlock;
   tokenomics: EvaluationBlock;
   sectorPosition: EvaluationBlock;
@@ -166,7 +166,7 @@ export interface EvaluationSummaryRow {
   ticker: string;
   name: string;
   comparisonGroup: string | null;
-  dataTier: Tier;
+  dataTier: DataTier;
   scores: Record<EvaluationComponentName, number | null>;
   dataQuality: Record<EvaluationComponentName, number>;
   hardFilterFail: boolean;

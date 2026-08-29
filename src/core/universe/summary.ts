@@ -1,7 +1,7 @@
 import type { AlphaDecision, AlphaStatus } from './alpha.types';
 import type { AssetArchetype, DataState } from './comparison.types';
 import type { TokenomicsDataState } from '../tokenomics/tokenomics.types';
-import type { CandidateView, Tier } from './universe.types';
+import type { CandidateView, DataTier } from './universe.types';
 
 /**
  * Компактная строка списка. Тяжёлое здесь не «сокращено», а выброшено целиком:
@@ -36,7 +36,7 @@ export interface UniverseSummaryRow {
   revenueState: DataState;
   tokenomicsState: TokenomicsDataState;
 
-  tier: Tier;
+  tier: DataTier;
   passed: boolean;
   rejectedAt: string | null;
   rejectReason: string | null;

@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { DISCOVERY } from './discovery';
 import type { EvaluationComponentName, EvaluationWeights } from '../core/evaluation/evaluation.types';
 import type { AnalysisProfile, ScreenRule } from '../core/universe/profile.types';
@@ -186,6 +187,23 @@ export const BUILTIN_PROFILES: readonly AnalysisProfile[] = [
 /** Возвращает встроенный профиль по идентификатору. */
 export function getProfile(id: string): AnalysisProfile | null {
   return BUILTIN_PROFILES.find((profile) => profile.id === id) ?? null;
+}
+
+/**
+ * Профиль запроса или профиль по умолчанию. Общая точка входа для evaluation и
+ * ranking: профиль обоих обязан совпасть, а два места, разбирающих profileId
+ * по-своему, рано или поздно разойдутся в трактовке пустой строки или опечатки.
+ */
+export function resolveProfile(id?: string): AnalysisProfile {
+  const wanted = id?.trim();
+  if (!wanted) return DEFAULT_PROFILE;
+  const profile = getProfile(wanted);
+  if (!profile) {
+    throw new BadRequestException(
+      `Неизвестный profileId: ${wanted}. Доступные: ${BUILTIN_PROFILES.map((item) => item.id).join(', ')}`,
+    );
+  }
+  return profile;
 }
 
 function rule(

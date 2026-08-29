@@ -126,11 +126,8 @@ const CODE_EVALUATIONS: EvaluationComponentName[] = [
   'tokenomics',
   'sectorPosition',
 ];
-const LLM_AGENTS = ['mechanism', 'critic'];
-// Ключи совпадают с именами компонентов посимвольно: старые screener и unlocks
-// тихо выпадали бы из композита, и никто бы этого не заметил. critic в веса не
-// входит — он штрафной множитель к итогу, а не слагаемое.
-const WEIGHTS = { tokenomics: 0.35, mechanism: 0.25, valuation: 0.2, sectorPosition: 0.2 };
+// Веса кодовых компонентов сохранены без перенормировки.
+const WEIGHTS = { tokenomics: 0.35, valuation: 0.2, sectorPosition: 0.2 };
 const TIER_CUTS = { a: 70, b: 45, minDataQuality: 0.5 };
 const THRESHOLDS = {
   minMcapUsd: 50_000_000,
@@ -146,7 +143,6 @@ export const DEFAULT_PROFILE = {
   alpha: DEFAULT_ALPHA,
   thresholds: THRESHOLDS,
   codeEvaluations: CODE_EVALUATIONS,
-  llmAgents: LLM_AGENTS,
   weights: WEIGHTS,
   tierCuts: TIER_CUTS,
 } satisfies AnalysisProfile;

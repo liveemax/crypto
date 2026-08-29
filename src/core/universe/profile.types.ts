@@ -66,9 +66,7 @@ export interface AnalysisProfile {
   thresholds: { minMcapUsd: number; minAnnualRevenueUsd: number; maxPRev: number };
   /** Кодовые оценки: считаются локально, без сети и без модели. */
   codeEvaluations: EvaluationComponentName[];
-  /** LLM-агенты. Отсутствующие в списке не участвуют в композите. */
-  llmAgents: string[];
-  /** Ключи совпадают с именами компонентов и агентов посимвольно. */
+  /** Ключи совпадают с именами кодовых компонентов посимвольно. */
   weights: Record<string, number>;
   tierCuts: { a: number; b: number; minDataQuality: number };
 }

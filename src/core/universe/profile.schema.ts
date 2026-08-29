@@ -65,7 +65,6 @@ const profileSchema = z
     codeEvaluations: z
       .array(z.enum(['valuation', 'tokenomics', 'sectorPosition']))
       .min(1),
-    llmAgents: z.array(z.string().trim().min(1)),
     weights: z
       .record(z.string().trim().min(1), z.number().finite().nonnegative())
       .refine(

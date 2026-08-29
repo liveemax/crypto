@@ -18,7 +18,7 @@ describe('ConfigController (e2e)', () => {
     const response = await request(app.getHttpServer()).get('/config/thresholds').expect(200);
     expect(response.body).toEqual({
       thresholds: { minMcapUsd: 50_000_000, minAnnualRevenueUsd: 1_000_000, maxPRev: 60 },
-      weights: { tokenomics: 0.35, mechanism: 0.25, valuation: 0.2, sectorPosition: 0.2 },
+      weights: { tokenomics: 0.35, valuation: 0.2, sectorPosition: 0.2 },
       maxStaleDays: 45,
     });
   });
@@ -37,7 +37,14 @@ describe('ConfigController (e2e)', () => {
   });
 
   it('НЕГАТИВНЫЙ: удалённые эндпоинты отвечают 404 в едином формате', async () => {
-    for (const path of ['/config/universe', '/config/sectors', '/snapshot', '/agents']) {
+    for (const path of [
+      '/config/universe',
+      '/config/sectors',
+      '/snapshot',
+      '/agents',
+      '/analysis/mechanism/test',
+      '/analysis/critic/test',
+    ]) {
       const response = await request(app.getHttpServer()).get(path).expect(404);
       // Второй ответ на тот же вопрос всегда неверный, поэтому их нет; но тупика быть не должно.
       expect(response.body.code).toBe('not_found');

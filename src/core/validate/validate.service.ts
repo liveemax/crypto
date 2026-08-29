@@ -1,6 +1,5 @@
-import { Injectable } from '@nestjs/common';
 import { MAX_STALE_DAYS } from '../../config/thresholds';
-import { AgentResult, Metric } from '../types';
+import type { Metric } from '../types';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -24,7 +23,7 @@ export interface MetricsCheck {
 /**
  * Проверяет происхождение и актуальность набора метрик. Чистая функция: её же
  * зовут блоки кодовой оценки, у которых Nest-провайдера нет и быть не должно.
- * Вторая реализация этой проверки разъехалась бы с агентами за один шаг.
+ * Вторая реализация этой проверки разъехалась бы с кодовыми блоками за один шаг.
  */
 export function checkMetrics(
   metrics: Record<string, Metric>,
@@ -75,12 +74,4 @@ export function checkMetrics(
     missing: [...missing].sort(),
     validator: { dropped: dropped.sort(), stale: stale.sort() },
   };
-}
-
-@Injectable()
-export class ValidateService {
-  /** Проверяет происхождение и актуальность всех метрик результата агента. */
-  validate(result: AgentResult, maxStaleDays = MAX_STALE_DAYS): AgentResult {
-    return { ...result, ...checkMetrics(result.metrics, result.missing, maxStaleDays) };
-  }
 }

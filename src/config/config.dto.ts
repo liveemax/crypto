@@ -15,9 +15,6 @@ export class CompositeWeightsDto {
   @ApiProperty({ example: 0.35, description: 'NHY: доход держателя минус разводнение' })
   tokenomics!: number;
 
-  @ApiProperty({ example: 0.25, description: 'Механизм возврата ценности и качество роста' })
-  mechanism!: number;
-
   @ApiProperty({ example: 0.2, description: 'Дешевизна относительно собственной выручки' })
   valuation!: number;
 

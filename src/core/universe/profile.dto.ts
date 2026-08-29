@@ -137,11 +137,6 @@ export class AnalysisProfileDto {
   @IsString({ each: true })
   codeEvaluations!: string[];
 
-  @ApiProperty({ type: [String], example: ['mechanism', 'critic'] })
-  @IsArray()
-  @IsString({ each: true })
-  llmAgents!: string[];
-
   @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } })
   @IsObject()
   weights!: Record<string, number>;

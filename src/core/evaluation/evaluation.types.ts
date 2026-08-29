@@ -61,10 +61,15 @@ export interface EvaluationSummary {
 }
 
 export interface EvaluationInputHashes {
-  /** universeVersion, builtAt, числа всей вселенной и профиль оценки. */
+  /** Только факты tokenomics по токенам; состав активной выборки сюда не входит. */
   perToken: string;
-  /** perToken плюс состав группы сравнения и конфигурация ранжирования. */
+  /** Состав групп, конфигурация и версии обеих сравнительных формул. */
   comparative: string;
+}
+
+export interface EvaluationFormulaVersions {
+  businessScale: string;
+  valuation: string;
 }
 
 export interface EvaluationRun {
@@ -74,6 +79,7 @@ export interface EvaluationRun {
   builtAt: string;
   activeFilters: ActiveFilterState;
   evaluationProfileId: string;
+  formulaVersions: EvaluationFormulaVersions;
   inputHashes: EvaluationInputHashes;
   inputCount: number;
   evaluatedCount: number;
@@ -90,12 +96,14 @@ export interface EvaluationRun {
 export type EvaluationContext = ResponseContext;
 export type { PaginationInfo };
 
+export interface EvaluationComponentReuse {
+  status: 'reused' | 'recomputed' | 'partial';
+  reused: number;
+  recomputed: number;
+}
+
 export interface EvaluationReuse {
-  perToken: boolean;
-  comparative: boolean;
-  reusedTokens: number;
-  recomputedTokens: number;
-  recomputedSectorPosition: number;
+  components: Record<EvaluationComponentName, EvaluationComponentReuse>;
   note: string;
 }
 
@@ -128,6 +136,7 @@ export interface EvaluationListResponse {
   runId: string;
   createdAt: string;
   evaluationProfileId: string;
+  formulaVersions: EvaluationFormulaVersions;
   summaries: Record<EvaluationComponentName, EvaluationSummary>;
   pagination: PaginationInfo;
   items: (CandidateEvaluation | EvaluationSummaryRow)[];

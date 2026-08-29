@@ -124,30 +124,56 @@ export class EvaluationSummaryDto {
   @ApiProperty({ example: 0.812 }) avgDataQuality!: number;
 }
 
+export class EvaluationFormulaVersionsDto {
+  @ApiProperty({ example: 'business-scale-v1' }) businessScale!: string;
+  @ApiProperty({ example: 'sector-valuation-v1' }) valuation!: string;
+}
+
+export class EvaluationSummaryRowDto {
+  @ApiProperty({ example: 'aave' }) coingeckoId!: string;
+  @ApiProperty({ example: 'AAVE' }) ticker!: string;
+  @ApiProperty({ example: 'Aave' }) name!: string;
+  @ApiProperty({ nullable: true, example: 'lending' }) comparisonGroup!: string | null;
+  @ApiProperty({ enum: ['yield', 'economics', 'pool', 'rejected'], example: 'yield' })
+  dataTier!: string;
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'number', nullable: true } })
+  scores!: Record<string, number | null>;
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } })
+  dataQuality!: Record<string, number>;
+  @ApiProperty({ example: false }) hardFilterFail!: boolean;
+  @ApiProperty({ type: [String], example: ['unlock12mPct'] }) missing!: string[];
+}
+
 export class EvaluationListResponseDto {
   @ApiProperty({ type: EvaluationContextDto }) context!: EvaluationContextDto;
   @ApiProperty({ example: 'eval_2026-08-28T09-12-00-000Z_deep-value' }) runId!: string;
   @ApiProperty({ example: '2026-08-28T09:12:00.000Z' }) createdAt!: string;
   @ApiProperty({ example: 'deep-value' }) evaluationProfileId!: string;
+  @ApiProperty({ type: EvaluationFormulaVersionsDto })
+  formulaVersions!: EvaluationFormulaVersionsDto;
   @ApiProperty({ type: EvaluationSummaryDto, additionalProperties: true })
   summaries!: Record<string, EvaluationSummaryDto>;
   @ApiProperty({ type: PaginationDto }) pagination!: PaginationDto;
   @ApiProperty({
-    type: 'array',
-    items: { type: 'object' },
+    type: EvaluationSummaryRowDto,
+    isArray: true,
     description: 'view=summary — баллы и качество; view=full — блоки целиком',
   })
   items!: unknown[];
 }
 
+export class EvaluationComponentReuseDto {
+  @ApiProperty({ enum: ['reused', 'recomputed', 'partial'], example: 'reused' })
+  status!: string;
+  @ApiProperty({ example: 331 }) reused!: number;
+  @ApiProperty({ example: 0 }) recomputed!: number;
+}
+
 export class EvaluationReuseDto {
-  @ApiProperty({ example: true }) perToken!: boolean;
-  @ApiProperty({ example: false }) comparative!: boolean;
-  @ApiProperty({ example: 331 }) reusedTokens!: number;
-  @ApiProperty({ example: 0 }) recomputedTokens!: number;
-  @ApiProperty({ example: 331 }) recomputedSectorPosition!: number;
+  @ApiProperty({ type: EvaluationComponentReuseDto, additionalProperties: true })
+  components!: Record<string, EvaluationComponentReuseDto>;
   @ApiProperty({
-    example: 'Числа те же, состав группы сравнения изменился: пересчитан только sectorPosition.',
+    example: 'Состав группы изменился: tokenomics переиспользован, comparative-компоненты пересчитаны.',
   })
   note!: string;
 }

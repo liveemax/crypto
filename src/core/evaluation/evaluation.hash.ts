@@ -3,30 +3,41 @@ import type { ActiveFilterState } from '../universe/filter-state.types';
 import type { AlphaConfig, AnalysisProfile } from '../universe/profile.types';
 import type { UniverseCandidate } from '../universe/universe.types';
 import type { EvaluationInputHashes } from './evaluation.types';
+import { BUSINESS_SCALE_FORMULA_VERSION } from './evaluation.constants';
 
-/** Числа, от которых зависит результат по одному токену. */
-const FACT_FIELDS = [
+/** Факты, от которых зависит только покомпонентный результат tokenomics. */
+const TOKENOMICS_FACT_FIELDS = [
+  'floatPct',
+  'overhangPct',
+  'unlock12mPct',
+  'netHolderYieldPct',
+  'holderYieldPct',
+  'nextUnlockUsd',
+  'nextUnlockAt',
+  'nextUnlockCostInDailyVolumes',
+  'tokenomicsState',
+  'marketSource',
+  'tokenomicsSource',
+  'marketAsOf',
+  'asOfTokenomics',
+] as const;
+
+const COMPARATIVE_FACT_FIELDS = [
   'mcapCalcUsd',
-  'fdvUsd',
   'tvlUsd',
   'fees12mUsd',
   'revenue12mUsd',
   'holdersRevenue12mUsd',
   'holderYieldPct',
-  'takeRatePct',
   'payoutRatioPct',
   'pRev',
   'pFees',
   'fdvRev',
   'revenuePerTvlPct',
-  'floatPct',
-  'fdvToMcap',
-  'overhangPct',
-  'unlock12mPct',
-  'netHolderYieldPct',
-  'tokenomicsState',
+  'marketSource',
+  'tvlSource',
+  'revenueSource',
   'marketAsOf',
-  'asOfTokenomics',
 ] as const;
 
 export interface HashInput {
@@ -45,29 +56,37 @@ export interface HashInput {
  * подвижку фильтра поводом пересчитать всё и объявить рейтинг несовместимым.
  */
 export function inputHashes(input: HashInput): EvaluationInputHashes {
-  const facts = [...input.universe]
+  const tokenomicsFacts = [...input.universe]
     .sort((left, right) => left.coingeckoId.localeCompare(right.coingeckoId))
     .map((candidate) => [
       candidate.coingeckoId,
-      ...FACT_FIELDS.map((field) => candidate[field] ?? null),
+      ...TOKENOMICS_FACT_FIELDS.map((field) => candidate[field] ?? null),
     ]);
 
   const perToken = digest({
     universeVersion: input.universeVersion,
     builtAt: input.builtAt,
-    profileId: input.profile.id,
-    thresholds: input.profile.thresholds,
-    valuation: input.profile.valuation,
-    facts,
+    tokenomicsFormulaVersion: 'absolute-overhang-v1',
+    facts: tokenomicsFacts,
   });
 
   const comparative = digest({
-    perToken,
+    facts: [...input.selection]
+      .sort((left, right) => left.coingeckoId.localeCompare(right.coingeckoId))
+      .map((candidate) => [
+        candidate.coingeckoId,
+        candidate.comparisonGroup ?? null,
+        ...COMPARATIVE_FACT_FIELDS.map((field) => candidate[field] ?? null),
+      ]),
+    profileId: input.profile.id,
+    thresholds: input.profile.thresholds,
+    valuation: input.profile.valuation,
     rankBy: input.rankBy,
-    alphaEnabled: input.activeFilters.alpha.enabled,
-    members: [...input.selection]
-      .map((candidate) => `${candidate.coingeckoId}:${candidate.comparisonGroup ?? '-'}`)
-      .sort(),
+    activeFilters: input.activeFilters,
+    formulaVersions: {
+      businessScale: BUSINESS_SCALE_FORMULA_VERSION,
+      valuation: input.profile.valuation.formulaVersion,
+    },
   });
 
   return { perToken, comparative };

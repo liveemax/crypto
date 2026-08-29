@@ -8,7 +8,7 @@ import type { AlphaConfig, AnalysisProfile } from '../universe/profile.types';
 import { UniverseService } from '../universe/universe.service';
 import type { CandidateView, UniverseView } from '../universe/universe.types';
 import { evaluateSectorPosition } from './sector-position';
-import { SUPPLY_FIELD } from './evaluation.constants';
+import { BUSINESS_SCALE_FORMULA_VERSION } from './evaluation.constants';
 import { evaluateTokenomics } from './tokenomics-block';
 import { valuationPositions } from './valuation';
 import { inputHashes } from './evaluation.hash';
@@ -112,7 +112,6 @@ export class EvaluationService {
     const samePerToken =
       request.refresh !== true &&
       previous !== null &&
-      previous.evaluationProfileId === profile.id &&
       previous.inputHashes.perToken === hashes.perToken;
     const sameComparative =
       samePerToken && previous !== null && previous.inputHashes.comparative === hashes.comparative;
@@ -143,30 +142,29 @@ export class EvaluationService {
       );
     }
 
-    let reused = 0;
-    let recomputed = 0;
-    let recomputedSector = 0;
+    const reused = { valuation: 0, tokenomics: 0, sectorPosition: 0 };
+    const recomputed = { valuation: 0, tokenomics: 0, sectorPosition: 0 };
 
     const candidates: CandidateEvaluation[] = selection.map((candidate) => {
       const old = before.get(candidate.coingeckoId);
       const reusable = old !== undefined;
-      if (reusable) reused += 1;
-      else recomputed += 1;
 
       const valuation = reusable && sameComparative
         ? old.valuation
         : valuations.get(candidate.coingeckoId)!;
+      if (reusable && sameComparative) reused.valuation += 1;
+      else recomputed.valuation += 1;
 
-      // tokenomics сравнивает навес внутри ниши, поэтому зависит от состава
-      // группы так же, как sectorPosition, и переиспользуется по comparative.
-      let tokenomics: EvaluationBlock;
+      const tokenomics = reusable ? old.tokenomics : evaluateTokenomics(candidate);
+      if (reusable) reused.tokenomics += 1;
+      else recomputed.tokenomics += 1;
+
       let sectorPosition: EvaluationBlock;
       if (reusable && sameComparative) {
-        tokenomics = old.tokenomics;
         sectorPosition = old.sectorPosition;
+        reused.sectorPosition += 1;
       } else {
         const position = positions.get(candidate.coingeckoId) ?? null;
-        tokenomics = evaluateTokenomics(candidate, supplyPercentileOf(position));
         sectorPosition = evaluateSectorPosition(
           candidate,
           position,
@@ -174,7 +172,7 @@ export class EvaluationService {
           candidate.alpha,
           alphaOn,
         );
-        recomputedSector += 1;
+        recomputed.sectorPosition += 1;
       }
 
       return {
@@ -203,6 +201,10 @@ export class EvaluationService {
       builtAt: view.builtAt,
       activeFilters: view.activeFilters,
       evaluationProfileId: profile.id,
+      formulaVersions: {
+        businessScale: BUSINESS_SCALE_FORMULA_VERSION,
+        valuation: profile.valuation.formulaVersion,
+      },
       inputHashes: hashes,
       inputCount: view.candidates.length,
       evaluatedCount: candidates.length,
@@ -222,16 +224,16 @@ export class EvaluationService {
       inputHashes: run.inputHashes,
       warnings: run.warnings,
       reuse: {
-        perToken: samePerToken,
-        comparative: sameComparative,
-        reusedTokens: reused,
-        recomputedTokens: recomputed,
-        recomputedSectorPosition: recomputedSector,
+        components: {
+          valuation: reuseOf(reused.valuation, recomputed.valuation),
+          tokenomics: reuseOf(reused.tokenomics, recomputed.tokenomics),
+          sectorPosition: reuseOf(reused.sectorPosition, recomputed.sectorPosition),
+        },
         note: samePerToken
           ? sameComparative
             ? 'Числа и состав группы сравнения те же: прогон переиспользован целиком.'
-            : 'Состав группы сравнения изменился: пересчитаны valuation, sectorPosition и tokenomics, ' +
-              'все три компонента сравнивают внутри ниши.'
+            : 'Состав группы сравнения изменился: tokenomics переиспользован для прежних токенов, ' +
+              'valuation и sectorPosition пересчитаны.'
           : 'Числа или профиль изменились: пересчитано всё.',
       },
     };
@@ -345,6 +347,7 @@ export class EvaluationService {
       runId: run.runId,
       createdAt: run.createdAt,
       evaluationProfileId: run.evaluationProfileId,
+      formulaVersions: run.formulaVersions,
       summaries: run.summaries,
       pagination: {
         offset,
@@ -369,17 +372,20 @@ export class EvaluationService {
   }
 }
 
-/** Перцентиль навеса из общего расчёта: второй его источник разъехался бы с первым. */
-function supplyPercentileOf(position: SectorPosition | null): number | null {
-  return position?.percentiles.find((item) => item.field === SUPPLY_FIELD)?.percentile ?? null;
-}
-
 function contextOf(run: EvaluationRun): EvaluationContext {
   return {
     universeVersion: run.universeVersion,
     builtAt: run.builtAt,
     activeFilters: run.activeFilters,
     asOf: run.createdAt,
+  };
+}
+
+function reuseOf(reused: number, recomputed: number) {
+  return {
+    status: reused === 0 ? 'recomputed' as const : recomputed === 0 ? 'reused' as const : 'partial' as const,
+    reused,
+    recomputed,
   };
 }
 

@@ -4,9 +4,9 @@ import { DERIVATIVE_NAME, DISCOVERY } from '../../config/discovery';
 import { sub } from '../money';
 import type { AnalysisProfile, ScreenRule } from './profile.types';
 import type {
+  DataTier,
   FunnelReport,
   FunnelStage,
-  Tier,
   UniverseCandidate,
 } from './universe.types';
 
@@ -107,13 +107,13 @@ export function passesRule(
  * Тир, а не отсев: отсутствие финансовых данных — повод не звать агентов,
  * а не повод выбросить токен из вселенной.
  */
-export function tierOf(item: UniverseCandidate): Tier {
+export function tierOf(item: UniverseCandidate): DataTier {
   if ((item.holdersRevenue12mUsd ?? 0) > 0) return 'yield';
   if ((item.revenue12mUsd ?? 0) > 0) return 'economics';
   return 'pool';
 }
-export function countTiers(candidates: UniverseCandidate[]): Record<Tier, number> {
-  const tiers: Record<Tier, number> = { yield: 0, economics: 0, pool: 0, rejected: 0 };
+export function countTiers(candidates: UniverseCandidate[]): Record<DataTier, number> {
+  const tiers: Record<DataTier, number> = { yield: 0, economics: 0, pool: 0, rejected: 0 };
   for (const item of candidates) tiers[item.tier] += 1;
   return tiers;
 }

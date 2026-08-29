@@ -44,7 +44,21 @@ const alphaConfigSchema = z
   .strict()
   .refine((config) => config.minScoreMetrics <= config.rankBy.length, {
     message: 'minScoreMetrics больше числа метрик: сравнимых участников не будет ни одного',
-  });
+  })
+  .refine(
+    (config) =>
+      config.rankBy.length === 2 &&
+      config.rankBy[0]?.field === 'tvlUsd' &&
+      config.rankBy[0]?.direction === 'higher_better' &&
+      config.rankBy[1]?.field === 'revenue12mUsd' &&
+      config.rankBy[1]?.direction === 'higher_better' &&
+      config.minRankedValues === 3 &&
+      config.minScoreMetrics === 2,
+    {
+      message:
+        'Business scale фиксирован: tvlUsd и revenue12mUsd (0.50/0.50), обе оси обязательны, минимум значений — 3',
+    },
+  );
 
 /** Проверяет разовую конфигурацию альфы из тела POST /universe/alpha. */
 export function parseAlphaConfig(value: unknown): AlphaConfig {

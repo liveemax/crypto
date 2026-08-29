@@ -73,53 +73,23 @@ const BASE_SCREEN: ScreenRule[] = [
   },
 ];
 
-/**
- * Альфа — cap, а не второй screen: абсолютных порогов здесь нет намеренно.
- * minRankedValues 3 — перцентиль из двух известных чисел это 0 и 100, а не измерение.
- * minScoreMetrics 2 — по одной метрике из шести место в нише не присуждается.
- *
- * Метрики идут парами «масштаб + оценка», потому что одиночная метрика правило
- * двух не проходит: у сети есть комиссии, но нет ни выручки, ни TVL, и без пары
- * fees12mUsd + pFees она остаётся несравнимой при полностью измеренной экономике.
- *
- * Комиссии — валовый оборот, выручка — то, что осталось протоколу: pFees 5 и
- * pRev 5 разные вещи. Смешения при этом нет — перцентиль каждой метрики
- * считается только среди тех, у кого она есть. На прогоне 26.08 fees12mUsd и
- * pFees оказались общей линейкой всех сравнимых участников каждой ниши, а
- * выручка добавляется сверху там, где измерена.
- */
+/** Business scale: только подтверждённые TVL и годовая выручка, поровну. */
 const DEFAULT_ALPHA: AnalysisProfile['alpha'] = {
   perSector: 5,
   minRankedValues: 3,
   minScoreMetrics: 2,
   rankBy: [
-    { field: 'holderYieldPct', direction: 'higher_better' },
-    { field: 'holdersRevenue12mUsd', direction: 'higher_better' },
+    { field: 'tvlUsd', direction: 'higher_better' },
     { field: 'revenue12mUsd', direction: 'higher_better' },
-    { field: 'pRev', direction: 'lower_better' },
-    { field: 'fees12mUsd', direction: 'higher_better' },
-    { field: 'pFees', direction: 'lower_better' },
-    { field: 'revenuePerTvlPct', direction: 'higher_better' },
   ],
 };
 
 /**
  * Та же механика, другой порядок вопросов: сначала дешевизна, потом масштаб.
- * Порядок на балл не влияет — sectorScore это среднее доступных перцентилей, —
+ * Порядок на балл не влияет — businessScaleScore это среднее двух перцентилей, —
  * но он виден в отчёте и объясняет, чем профиль отличается от базового.
  */
-const DEEP_VALUE_ALPHA: AnalysisProfile['alpha'] = {
-  ...DEFAULT_ALPHA,
-  rankBy: [
-    { field: 'pRev', direction: 'lower_better' },
-    { field: 'pFees', direction: 'lower_better' },
-    { field: 'revenuePerTvlPct', direction: 'higher_better' },
-    { field: 'revenue12mUsd', direction: 'higher_better' },
-    { field: 'fees12mUsd', direction: 'higher_better' },
-    { field: 'holderYieldPct', direction: 'higher_better' },
-    { field: 'holdersRevenue12mUsd', direction: 'higher_better' },
-  ],
-};
+const DEEP_VALUE_ALPHA: AnalysisProfile['alpha'] = DEFAULT_ALPHA;
 
 const CODE_EVALUATIONS: EvaluationComponentName[] = [
   'valuation',

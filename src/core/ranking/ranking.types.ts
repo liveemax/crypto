@@ -125,6 +125,8 @@ export interface RankingListResponse {
   notEvaluated: NotEvaluatedComponent[];
   pagination: PaginationInfo;
   items: (RankedCandidate | RankingSummaryRow)[];
+  /** Дословный дисклеймер продукта, обязателен в каждом ranking-ответе. */
+  disclaimer: string;
 }
 
 export interface RankingRunResponse extends RankingListResponse {

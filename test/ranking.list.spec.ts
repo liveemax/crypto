@@ -135,6 +135,9 @@ describe('ШАГ 15.2: конверт и страницы ranking', () => {
         if (kind === 'rankings') return rankingRuns.at(-1) ?? null;
         return null;
       }),
+      saveReport: jest.fn(async () => '/tmp/report.md'),
+      loadReport: jest.fn(async () => null),
+      appendJournal: jest.fn(async () => true),
     } as unknown as StoreService;
 
     universe = new UniverseService(

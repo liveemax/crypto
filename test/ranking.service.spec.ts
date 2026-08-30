@@ -173,6 +173,9 @@ describe('ШАГ 15.1: ядро ranking, композит и сохранени�
         if (kind === 'rankings') return rankingRuns.at(-1) ?? null;
         return null;
       }),
+      saveReport: jest.fn(async () => '/tmp/report.md'),
+      loadReport: jest.fn(async () => null),
+      appendJournal: jest.fn(async () => true),
     } as unknown as StoreService;
 
     jobs = new JobService();

@@ -100,7 +100,7 @@ describe('RankingController: POST /ranking/run, GET /ranking/latest (шаг 15.2
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'crypto-ranking-'));
-    const store = new StoreService(root);
+    const store = new StoreService(root, join(root, 'reports'));
     const snapshot: UniverseSnapshot = {
       version: '2026-08-29',
       builtAt: '2026-08-29T06:00:00.000Z',

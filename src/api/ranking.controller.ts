@@ -1,8 +1,17 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { RankingService } from '../core/ranking/ranking.service';
 import type { RankingListResponse, RankingRunResponse } from '../core/ranking/ranking.types';
 import { RankingListResponseDto, RankingQueryDto, RankingRunDto, RankingRunResponseDto } from './dto/ranking.dto';
+
+/**
+ * Только заголовок, который нужен отчёту. Не express.Response: типов express
+ * в проекте нет, а полный Response здесь не нужен — только успешный путь ставит
+ * Content-Type, ошибка идёт через ApiExceptionFilter и обычный application/json.
+ */
+interface HeaderResponse {
+  header(name: string, value: string): unknown;
+}
 
 @ApiTags('ranking')
 @Controller('ranking')
@@ -43,5 +52,27 @@ export class RankingController {
   @ApiOkResponse({ type: RankingListResponseDto })
   async latest(@Query() query: RankingQueryDto): Promise<RankingListResponse> {
     return this.ranking.list(query);
+  }
+
+  @Get('report/:runId')
+  @ApiProduces('text/markdown')
+  @ApiOperation({
+    summary: 'Markdown-отчёт сохранённого ranking run по его runId',
+    description:
+      'Читает уже сохранённый при POST /ranking/run отчёт, ничего не пересчитывая. ' +
+      'Отчёт сохранён по runId, а не по дате: два прогона за день не перезаписывают ' +
+      'друг друга. Неизвестный runId — нормализованная 404, а не пустой текст.',
+  })
+  @ApiParam({ name: 'runId', example: 'rank_2026-08-28T09-12-00-000Z_deep-value' })
+  @ApiOkResponse({ description: 'Markdown-текст отчёта', schema: { type: 'string' } })
+  async report(
+    @Param('runId') runId: string,
+    @Res({ passthrough: true }) res: HeaderResponse,
+  ): Promise<string> {
+    const text = await this.ranking.report(runId);
+    // Заголовок ставится только на успешном пути: ошибка идёт через
+    // ApiExceptionFilter, и её JSON не должен унаследовать text/markdown.
+    res.header('Content-Type', 'text/markdown; charset=utf-8');
+    return text;
   }
 }

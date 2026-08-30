@@ -9,7 +9,7 @@ describe('StoreService', () => {
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'crypto-store-'));
-    store = new StoreService(root);
+    store = new StoreService(root, join(root, 'reports'));
   });
 
   afterEach(async () => rm(root, { recursive: true, force: true }));
@@ -32,5 +32,31 @@ describe('StoreService', () => {
   it('сохраняет и загружает результат агента', async () => {
     await store.saveResult('screener', 'AAVE', { score: 80 });
     await expect(store.loadResult('screener', 'AAVE')).resolves.toEqual({ score: 80 });
+  });
+
+  it('сохраняет markdown-отчёт по runId и читает его обратно как текст', async () => {
+    await store.saveReport('rankings', 'rank_2026-08-30T00-00-00-000Z_deep-value', '# Отчёт\n');
+    await expect(
+      store.loadReport('rankings', 'rank_2026-08-30T00-00-00-000Z_deep-value'),
+    ).resolves.toBe('# Отчёт\n');
+  });
+
+  it('неизвестный runId отчёта — null, а не исключение', async () => {
+    await expect(store.loadReport('rankings', 'not-existing-run')).resolves.toBeNull();
+  });
+
+  it('appendJournal пишет заголовок один раз и не дублирует строку на тот же runId', async () => {
+    const first = await store.appendJournal('journal', 'run-1', '| run-1 | 5 |', '| id | n |\n|---|---|');
+    const second = await store.appendJournal('journal', 'run-1', '| run-1 | 5 |', '| id | n |\n|---|---|');
+    const third = await store.appendJournal('journal', 'run-2', '| run-2 | 7 |', '| id | n |\n|---|---|');
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(third).toBe(true);
+
+    const content = await readFile(join(root, 'reports', 'journal.md'), 'utf8');
+    expect(content.match(/run-1/g)).toHaveLength(1);
+    expect(content.match(/run-2/g)).toHaveLength(1);
+    expect(content.startsWith('| id | n |')).toBe(true);
   });
 });

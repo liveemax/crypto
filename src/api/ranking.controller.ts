@@ -2,9 +2,14 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestj
 import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { RankingService } from '../core/ranking/ranking.service';
 import type { SensitivityResult } from '../core/ranking/sensitivity.types';
-import type { RankingListResponse, RankingRunResponse } from '../core/ranking/ranking.types';
+import type {
+  RankingListResponse,
+  RankingOptionsResponse,
+  RankingRunResponse,
+} from '../core/ranking/ranking.types';
 import {
   RankingListResponseDto,
+  RankingOptionsResponseDto,
   RankingQueryDto,
   RankingRunDto,
   RankingRunResponseDto,
@@ -55,11 +60,29 @@ export class RankingController {
       'не отличить ни от другого отбора, ни от другого снимка.\n\n' +
       'view=summary по умолчанию: баллы, тир и короткие риск-флаги. view=full ' +
       'добавляет полную evaluation-карточку каждого кандидата — metrics, ' +
-      'percentiles, peers и provenance, это уже мегабайты JSON.',
+      'percentiles, peers и provenance, это уже мегабайты JSON.\n\n' +
+      'q, rankTier, dataTier и comparisonGroup фильтруют до пагинации: tiers верхнего ' +
+      'уровня остаётся totals всего run, pagination.total — отфильтрованный набор. ' +
+      'Без sort — sort=tier: A → B → C → watchlist, внутри тира composite desc, ' +
+      'затем coingeckoId asc.',
   })
   @ApiOkResponse({ type: RankingListResponseDto })
   async latest(@Query() query: RankingQueryDto): Promise<RankingListResponse> {
     return this.ranking.list(query);
+  }
+
+  @Get('options')
+  @ApiOperation({
+    summary: 'Значения фильтров тулбара: comparisonGroup последнего run',
+    description:
+      'Строится по кандидатам последнего сохранённого ranking run, а не по текущей ' +
+      'странице: null исключён, значения уникальны и отсортированы.\n\n' +
+      'Рейтинга ещё не было — тот же нормализованный ranking_missing с nextAction на ' +
+      'POST /ranking/run, а не пустой список: пустой список неотличим от отсутствия run.',
+  })
+  @ApiOkResponse({ type: RankingOptionsResponseDto })
+  async options(): Promise<RankingOptionsResponse> {
+    return this.ranking.options();
   }
 
   @Post('sensitivity')

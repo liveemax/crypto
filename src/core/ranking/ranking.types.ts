@@ -15,6 +15,21 @@ import type {
  */
 export type RankTier = 'A' | 'B' | 'C' | 'watchlist';
 
+/** Порядок тиров по умолчанию: A → B → C → watchlist, не алфавит. */
+export const RANK_TIERS: readonly RankTier[] = ['A', 'B', 'C', 'watchlist'];
+
+/** Поля сортировки GET /ranking/latest ШАГ 1.3. */
+export const RANKING_SORT_FIELDS = [
+  'tier',
+  'composite',
+  'valuation',
+  'tokenomics',
+  'sectorPosition',
+  'dataQuality',
+  'name',
+] as const;
+export type RankingSortField = (typeof RANKING_SORT_FIELDS)[number];
+
 /** Ровно два хард-фильтра шага 15.1. Риск-флаг сюда не входит. */
 export type HardFilterId = 'valuation_failed' | 'tokenomics_hard_filter';
 
@@ -78,6 +93,22 @@ export interface RankingListQuery {
   offset?: number;
   limit?: number;
   view?: 'summary' | 'full';
+  /** Регистронезависимая подстрока по evaluation.name, ticker и coingeckoId. */
+  q?: string;
+  rankTier?: RankTier;
+  dataTier?: DataTier;
+  comparisonGroup?: string;
+  /** Без явного значения — дефолт sort=tier. */
+  sort?: RankingSortField;
+  /** Без явного значения — дефолт поля: tier/name asc, баллы desc. */
+  order?: 'asc' | 'desc';
+}
+
+/** Ответ GET /ranking/options: значения фильтров тулбара последнего run. */
+export interface RankingOptionsResponse {
+  context: ResponseContext;
+  runId: string;
+  comparisonGroups: string[];
 }
 
 /** Композит и его метаданные одним объектом: то же взвешенное среднее, что решает тир. */

@@ -5,6 +5,7 @@ import {
   RefreshUniverseDto,
   RefreshUniverseResponseDto,
   UniverseQueryDto,
+  UniverseOptionsResponseDto,
   ScreenApplyResponseDto,
   UniverseStatusDto,
   FunnelViewDto,
@@ -19,7 +20,7 @@ import { AlphaApplyResponseDto } from './universe.dto';
 import { CompareUniverseDto } from './profile.dto';
 import { UniverseService } from './universe.service';
 import { ProfileReference, UniverseListQuery } from './universe.types';
-import type { CandidateView } from './universe.types';
+import type { CandidateView, UniverseOptionsResponse } from './universe.types';
 import type { DataGapRow } from './data-gaps.types';
 import type { Envelope } from '../envelope.types';
 import type { AlphaSelectionRequest, ScreenSelectionRequest } from './filter-state.types';
@@ -256,6 +257,21 @@ export class UniverseController {
     return this.universe.dataGaps(query);
   }
 
+  @Get('options')
+  @ApiOperation({
+    summary: 'Значения фильтров тулбара: сектора всей вселенной',
+    description:
+      'sectors строится по всей текущей UniverseView.candidates, не по странице и не ' +
+      'только по прошедшим отбор: тулбар должен предлагать сектор, даже если в нём ' +
+      'не осталось ни одного прошедшего.\n\n' +
+      'context обязателен: список секторов зависит от snapshot и activeFilters так же, ' +
+      'как и сам список кандидатов.',
+  })
+  @ApiOkResponse({ type: UniverseOptionsResponseDto })
+  async options(): Promise<UniverseOptionsResponse> {
+    return this.universe.options();
+  }
+
   @Get()
   @ApiOperation({
     summary: 'Список монет с числами, тирами и причинами отсева',
@@ -268,7 +284,10 @@ export class UniverseController {
       'Отдаётся страницами: limit по умолчанию 50, максимум 200. По умолчанию ' +
       'view=summary — перцентили ниши, peers, склейка и сырые категории в него не ' +
       'входят: на пятидесяти строках это половина веса ответа. Разбирать один токен ' +
-      'дешевле через GET /universe/{token}, там всё это есть вместе с оценкой.',
+      'дешевле через GET /universe/{token}, там всё это есть вместе с оценкой.\n\n' +
+      'q ищет подстроку по name, ticker и coingeckoId без учёта регистра. sort и order ' +
+      'считает код: без order действует дефолт поля (rank/pRev/pFees — asc, остальные ' +
+      'метрики — desc), null всегда в конце независимо от направления.',
   })
   @ApiOkResponse({ type: UniverseListResponseDto })
   async list(

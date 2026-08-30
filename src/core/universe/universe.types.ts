@@ -1,13 +1,38 @@
 import type { AnalysisProfile } from './profile.types';
 import type { ActiveFilterState, FilterName } from './filter-state.types';
 import type { JobProgressEvent, JobStep } from '../jobs/job.types';
-import type { PageQuery } from '../envelope.types';
+import type { PageQuery, ResponseContext } from '../envelope.types';
 import type { AlphaDataGap, AlphaSectorSummary, AlphaView } from './alpha.types';
 import type { AssetArchetype, DataState } from './comparison.types';
 import type { TokenomicsFields } from '../tokenomics/tokenomics.types';
 
 export type RevenueBasis = 'reported_1y' | 'run_rate_30d' | 'none';
 export type MatchSource = 'gecko_id' | 'chain' | 'override' | 'none';
+
+/** Поля сортировки списка ШАГ 1: summary-метрики плюс businessScaleScore альфы. */
+export const UNIVERSE_SORT_FIELDS = [
+  'rank',
+  'mcapCalcUsd',
+  'vol24hUsd',
+  'tvlUsd',
+  'revenue12mUsd',
+  'holdersRevenue12mUsd',
+  'holderYieldPct',
+  'pRev',
+  'pFees',
+  'overhangPct',
+  'unlock12mPct',
+  'netHolderYieldPct',
+  'businessScaleScore',
+] as const;
+export type UniverseSortField = (typeof UNIVERSE_SORT_FIELDS)[number];
+
+/** rank и мультипликаторы дешевизны — по возрастанию; остальные метрики — по убыванию. */
+export const UNIVERSE_SORT_ASC_DEFAULT: ReadonlySet<UniverseSortField> = new Set([
+  'rank',
+  'pRev',
+  'pFees',
+]);
 
 /**
  * Тир данных кандидата — не тир рейтинга (см. RankTier в core/ranking).
@@ -273,7 +298,17 @@ export interface UniverseListQuery extends PageQuery {
   passedOnly?: boolean;
   tier?: DataTier;
   sector?: string;
-  sort?: 'rank' | 'holderYieldPct' | 'revenue12mUsd' | 'pRev';
+  /** Регистронезависимая подстрока по name, ticker и coingeckoId. */
+  q?: string;
+  sort?: UniverseSortField;
+  /** Без явного значения — дефолт поля из UNIVERSE_SORT_ASC_DEFAULT. */
+  order?: 'asc' | 'desc';
   /** summary по умолчанию: percentiles и peers пятидесяти строк — половина веса ответа. */
   view?: 'summary' | 'full';
+}
+
+/** Список секторов текущей вселенной для тулбара фильтров: не страница, а весь снимок. */
+export interface UniverseOptionsResponse {
+  context: ResponseContext;
+  sectors: string[];
 }

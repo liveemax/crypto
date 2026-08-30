@@ -1,14 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { AnalysisProfileDto } from './profile.dto';
 import { ActiveFilterStateDto } from './filter-state.dto';
 import { AlphaDataGapDto, AlphaSectorSummaryDto, AlphaViewDto } from './alpha.dto';
+import { UNIVERSE_SORT_FIELDS } from './universe.types';
+import type { UniverseSortField } from './universe.types';
+import { ResponseContextDto } from '../envelope.dto';
 
 /** Сохраняет undefined: иначе отсутствующий флаг превращается в явный false. */
 const toBoolean = ({ value }: { value: unknown }): boolean | undefined => {
   if (value === undefined || value === null || value === '') return undefined;
   return value === true || value === 'true' || value === '1';
+};
+
+/** trim на входе; пустая строка после него равна отсутствующему фильтру. */
+const toTrimmedQuery = ({ value }: { value: unknown }): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
 };
 
 export class RefreshUniverseDto {
@@ -56,13 +66,36 @@ export class UniverseQueryDto {
   sector?: string;
 
   @ApiPropertyOptional({
-    description: 'Сортировка по убыванию',
-    enum: ['rank', 'holderYieldPct', 'revenue12mUsd', 'pRev'],
+    description:
+      'Регистронезависимый поиск подстрокой по name, ticker и coingeckoId. ' +
+      'Пустая строка после trim равна отсутствующему фильтру',
+    example: 'aave',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @Transform(toTrimmedQuery)
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({
+    description: 'Поле сортировки summary-таблицы',
+    enum: UNIVERSE_SORT_FIELDS,
     default: 'rank',
   })
   @IsOptional()
-  @IsIn(['rank', 'holderYieldPct', 'revenue12mUsd', 'pRev'])
-  sort?: string;
+  @IsIn(UNIVERSE_SORT_FIELDS)
+  sort?: UniverseSortField;
+
+  @ApiPropertyOptional({
+    description:
+      'Направление сортировки. Без явного значения — дефолт поля: rank/pRev/pFees ' +
+      'по возрастанию, остальные метрики по убыванию',
+    enum: ['asc', 'desc'],
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
 
   @ApiPropertyOptional({
     enum: ['summary', 'full'],
@@ -90,6 +123,17 @@ export class UniverseQueryDto {
   @Min(0)
   offset?: number;
 
+}
+
+/** Ответ GET /universe/options: сектора всей вселенной, не текущей страницы. */
+export class UniverseOptionsResponseDto {
+  @ApiProperty({ type: ResponseContextDto }) context!: ResponseContextDto;
+  @ApiProperty({
+    type: [String],
+    example: ['dexs', 'lending', 'liquid-staking'],
+    description: 'Уникальные, отсортированы лексикографически; null в список не входит',
+  })
+  sectors!: string[];
 }
 
 export class UniverseCandidateDto {

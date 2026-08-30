@@ -3,6 +3,7 @@ import { resolveProfile } from '../../config/profiles';
 import { RESEARCH_DISCLAIMER } from '../disclaimer';
 import { conflict, notFound, NEXT } from '../errors';
 import { paginate } from '../envelope';
+import { matchesSearch } from '../search';
 import { EvaluationService } from '../evaluation/evaluation.service';
 import type { EvaluationRun } from '../evaluation/evaluation.types';
 import { StoreService } from '../store/store.service';
@@ -11,12 +12,14 @@ import { RANKING_FORMULA_VERSION, SENSITIVITY_FORMULA_VERSION } from './ranking.
 import { rankingJournalRow, RANKING_JOURNAL_HEADER } from './ranking.journal';
 import { renderRankingReport } from './ranking.report';
 import { rankingSummaryRow } from './ranking.summary';
+import { defaultRankingOrderFor, rankingComparator } from './ranking.sort';
 import { buildScenarios, sensitivityReportOf } from './sensitivity';
 import type { SensitivityResult, SensitivityRunRequest } from './sensitivity.types';
 import type {
   RankedCandidate,
   RankingListQuery,
   RankingListResponse,
+  RankingOptionsResponse,
   RankingRun,
   RankingRunRequest,
   RankingRunResponse,
@@ -98,6 +101,34 @@ export class RankingService {
 
   /** Последний сохранённый ranking run страницами; расчёта не запускает. */
   async list(query: RankingListQuery = {}): Promise<RankingListResponse> {
+    const run = await this.requireLatest();
+    return this.envelope(run, query);
+  }
+
+  /** Значения фильтров тулбара последнего run: comparisonGroup без null, уникальные. */
+  async options(): Promise<RankingOptionsResponse> {
+    const run = await this.requireLatest();
+    const comparisonGroups = [
+      ...new Set(
+        run.candidates
+          .map((item) => item.evaluation.comparisonGroup)
+          .filter((group): group is string => group !== null),
+      ),
+    ].sort();
+    return {
+      context: {
+        universeVersion: run.universeVersion,
+        builtAt: run.builtAt,
+        activeFilters: run.activeFilters,
+        asOf: run.createdAt,
+      },
+      runId: run.runId,
+      comparisonGroups,
+    };
+  }
+
+  /** Последний сохранённый run или нормализованный conflict с nextAction на запуск. */
+  private async requireLatest(): Promise<RankingRun> {
     const run = await this.store.loadRun<RankingRun>(STORE_KIND);
     if (run === null) {
       throw conflict(
@@ -107,7 +138,7 @@ export class RankingService {
         NEXT.runRanking,
       );
     }
-    return this.envelope(run, query);
+    return run;
   }
 
   /**
@@ -165,8 +196,30 @@ export class RankingService {
     return text;
   }
 
+  /**
+   * Фильтры и поиск выполняются до пагинации; run.candidates не мутируется —
+   * каждый filter() возвращает новый массив, sort() уже работает над копией.
+   */
+  private filteredAndSorted(run: RankingRun, query: RankingListQuery): RankedCandidate[] {
+    const q = query.q?.trim().toLowerCase();
+    const comparisonGroup = query.comparisonGroup?.trim().toLowerCase();
+    const sort = query.sort ?? 'tier';
+    const order = query.order ?? defaultRankingOrderFor(sort);
+    return run.candidates
+      .filter((item) => (query.rankTier ? item.rankTier === query.rankTier : true))
+      .filter((item) => (query.dataTier ? item.evaluation.dataTier === query.dataTier : true))
+      .filter((item) =>
+        comparisonGroup ? item.evaluation.comparisonGroup?.toLowerCase() === comparisonGroup : true,
+      )
+      .filter((item) =>
+        q ? matchesSearch(q, item.evaluation.name, item.evaluation.ticker, item.evaluation.coingeckoId) : true,
+      )
+      .sort(rankingComparator(sort, order));
+  }
+
   private envelope(run: RankingRun, query: RankingListQuery): RankingListResponse {
-    const { page, pagination } = paginate(run.candidates, query);
+    const rows = this.filteredAndSorted(run, query);
+    const { page, pagination } = paginate(rows, query);
     return {
       context: {
         universeVersion: run.universeVersion,

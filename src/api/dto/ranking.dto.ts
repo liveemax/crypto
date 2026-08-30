@@ -1,12 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { PaginationDto, ResponseContextDto } from '../../core/envelope.dto';
+import { RANKING_SORT_FIELDS } from '../../core/ranking/ranking.types';
+import type { RankingSortField } from '../../core/ranking/ranking.types';
 import {
   CandidateEvaluationDto,
   EvaluationQueryDto,
   NotEvaluatedComponentDto,
 } from './evaluation.dto';
+
+/** trim на входе; пустая строка после него равна отсутствующему фильтру. */
+const toTrimmedQuery = ({ value }: { value: unknown }): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+};
 
 export class RankingRunDto {
   @ApiPropertyOptional({
@@ -21,7 +30,54 @@ export class RankingRunDto {
 }
 
 /** Пагинация и view=summary|full те же, что у остальных списков: одна форма запроса. */
-export class RankingQueryDto extends EvaluationQueryDto {}
+export class RankingQueryDto extends EvaluationQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Регистронезависимый поиск подстрокой по evaluation.name, ticker и coingeckoId. ' +
+      'Пустая строка после trim равна отсутствующему фильтру',
+    example: 'aave',
+    maxLength: 100,
+  })
+  @IsOptional()
+  @Transform(toTrimmedQuery)
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ enum: ['A', 'B', 'C', 'watchlist'], example: 'A' })
+  @IsOptional()
+  @IsIn(['A', 'B', 'C', 'watchlist'])
+  rankTier?: 'A' | 'B' | 'C' | 'watchlist';
+
+  @ApiPropertyOptional({ enum: ['yield', 'economics', 'pool', 'rejected'] })
+  @IsOptional()
+  @IsIn(['yield', 'economics', 'pool', 'rejected'])
+  dataTier?: 'yield' | 'economics' | 'pool' | 'rejected';
+
+  @ApiPropertyOptional({ example: 'lending', description: 'Точное совпадение без учёта регистра' })
+  @IsOptional()
+  @IsString()
+  comparisonGroup?: string;
+
+  @ApiPropertyOptional({
+    description: 'Без явного значения — sort=tier',
+    enum: RANKING_SORT_FIELDS,
+    default: 'tier',
+  })
+  @IsOptional()
+  @IsIn(RANKING_SORT_FIELDS)
+  sort?: RankingSortField;
+
+  @ApiPropertyOptional({
+    description:
+      'Направление сортировки. Для sort=tier — порядок тиров (default asc: ' +
+      'A → B → C → watchlist), для остальных полей — дефолт tier/name asc, баллы desc',
+    enum: ['asc', 'desc'],
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
+}
 
 export class RankingFormulaVersionsDto {
   @ApiProperty({ example: 'business-scale-v1' }) businessScale!: string;
@@ -147,6 +203,18 @@ export class RankingListResponseDto {
     description: 'Дословный дисклеймер продукта, обязателен в каждом ranking-ответе',
   })
   disclaimer!: string;
+}
+
+/** Ответ GET /ranking/options: значения фильтров тулбара последнего run. */
+export class RankingOptionsResponseDto {
+  @ApiProperty({ type: RankingContextDto }) context!: RankingContextDto;
+  @ApiProperty({ example: 'rank_2026-08-28T09-12-00-000Z_deep-value' }) runId!: string;
+  @ApiProperty({
+    type: [String],
+    example: ['dexs', 'lending'],
+    description: 'Без null, уникальны, отсортированы; строится по кандидатам последнего run',
+  })
+  comparisonGroups!: string[];
 }
 
 export class RankingRunResponseDto extends RankingListResponseDto {

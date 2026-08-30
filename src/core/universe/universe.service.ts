@@ -4,11 +4,12 @@ import { badRequest, NEXT, notFound } from '../errors';
 import { paginate } from '../envelope';
 import type { Envelope, ResponseContext } from '../envelope.types';
 import { collectDataGaps } from './data-gaps';
-import { comparator } from './sort';
+import { comparator, defaultOrderFor } from './sort';
+import { matchesSearch } from '../search';
 import { summaryOf } from './summary';
 import type { UniverseSummaryRow } from './summary';
 import type { DataGapQuery, DataGapRow } from './data-gaps.types';
-import type { UniverseListQuery } from './universe.types';
+import type { UniverseListQuery, UniverseOptionsResponse } from './universe.types';
 import { EMPTY_TOKENOMICS, TOKENOMICS_SNAPSHOT } from '../tokenomics/tokenomics.constants';
 import { applyTokenomics, overhangPctOf } from '../tokenomics/tokenomics.calc';
 import { DEFAULT_PROFILE, getProfile } from '../../config/profiles';
@@ -538,24 +539,45 @@ export class UniverseService {
     };
   }
 
-  /** Список кандидатов страницами и в конверте: голый массив не объясняет происхождение. */
+  /**
+   * Список кандидатов страницами и в конверте: голый массив не объясняет
+   * происхождение. Порядок обработки: active selection → passedOnly/tier/
+   * sector/q → sort/order → pagination → summary/full.
+   */
   async list(
     query: UniverseListQuery = {},
   ): Promise<Envelope<CandidateView | UniverseSummaryRow>> {
     const view = await this.view();
     const passedOnly = query.passedOnly ?? true;
     const sector = query.sector?.trim().toLowerCase();
+    const q = query.q?.trim().toLowerCase();
+    const sort = query.sort ?? 'rank';
+    const order = query.order ?? defaultOrderFor(sort);
     const rows = view.candidates
       .filter((item) => (passedOnly ? item.passed : true))
       .filter((item) => (query.tier ? item.tier === query.tier : true))
       .filter((item) => (sector ? item.sector === sector : true))
-      .sort(comparator(query.sort ?? 'rank'));
+      .filter((item) => (q ? matchesSearch(q, item.name, item.ticker, item.coingeckoId) : true))
+      .sort(comparator(sort, order));
 
     const { page, pagination } = paginate(rows, query);
     // Полная строка едет в браузер только по явному запросу: перцентили и peers
     // читают, когда разбирают один токен, а не когда листают список.
     const items = query.view === 'full' ? page : page.map(summaryOf);
     return { context: this.contextOf(view), pagination, items };
+  }
+
+  /** Сектора всей текущей вселенной для тулбара фильтров: не страница и не только passed. */
+  async options(): Promise<UniverseOptionsResponse> {
+    const view = await this.view();
+    const sectors = [
+      ...new Set(
+        view.candidates
+          .map((item) => item.sector?.trim().toLowerCase())
+          .filter((sector): sector is string => Boolean(sector)),
+      ),
+    ].sort();
+    return { context: this.contextOf(view), sectors };
   }
 
   /** Типизированная очередь пробелов: что мешает посчитать числа и по каким токенам. */

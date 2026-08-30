@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { PaginationDto, ResponseContextDto } from '../../core/envelope.dto';
 import {
   CandidateEvaluationDto,
@@ -157,4 +158,91 @@ export class RankingRunResponseDto extends RankingListResponseDto {
   evaluationRecomputed!: boolean;
   @ApiProperty({ example: 352 }) candidateCount!: number;
   @ApiProperty({ type: 'object', additionalProperties: true }) inputHashes!: Record<string, string>;
+}
+
+export class SensitivityRunDto {
+  @ApiProperty({
+    example: 'rank_2026-08-28T09-12-00-000Z_deep-value',
+    description: 'runId уже сохранённого ranking run. Неизвестный runId — нормализованная 4xx',
+  })
+  @IsString()
+  @IsNotEmpty()
+  runId!: string;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (value === undefined || value === '' ? undefined : Number(value)))
+  @IsInt()
+  @Min(0)
+  offset?: number;
+
+  @ApiPropertyOptional({ example: 50, description: 'По умолчанию 50, максимум 200' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (value === undefined || value === '' ? undefined : Number(value)))
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+}
+
+export class SensitivityWeightsDto {
+  @ApiProperty({ example: 0.35 }) tokenomics!: number;
+  @ApiProperty({ example: 0.35 }) valuation!: number;
+  @ApiProperty({ example: 0.3 }) sectorPosition!: number;
+}
+
+export class SensitivityScenarioDto {
+  @ApiProperty({ example: 1.0 }) tokenomicsMultiplier!: number;
+  @ApiProperty({ example: 1.0 }) valuationMultiplier!: number;
+  @ApiProperty({ type: SensitivityWeightsDto }) weights!: SensitivityWeightsDto;
+}
+
+export class SensitivityCandidateResultDto {
+  @ApiProperty({ example: 'aave' }) coingeckoId!: string;
+  @ApiProperty({ example: 'AAVE' }) ticker!: string;
+  @ApiProperty({ example: 'Aave' }) name!: string;
+  @ApiProperty({ enum: ['A', 'B', 'C', 'watchlist'], example: 'B' }) baselineTier!: string;
+  @ApiProperty({ nullable: true, example: 61.4 }) baselineComposite!: number | null;
+  @ApiProperty({ nullable: true, example: 54.2 }) minComposite!: number | null;
+  @ApiProperty({ nullable: true, example: 68.9 }) maxComposite!: number | null;
+  @ApiProperty({ example: 2, description: 'Из 25 сценариев — сколько дали тир, отличный от baseline' })
+  tierChanges!: number;
+  @ApiProperty({ type: [String], example: ['B', 'C'] }) tiersReached!: string[];
+}
+
+export class SensitivitySummaryDto {
+  @ApiProperty({ example: 25 }) scenarioCount!: number;
+  @ApiProperty({ example: 331 }) candidatesWithComposite!: number;
+  @ApiProperty({ example: 18 }) candidatesTierChanged!: number;
+  @ApiProperty({ example: 5.4 }) tierChangedSharePct!: number;
+  @ApiProperty({ enum: ['stable', 'sensitive', 'insufficient_data'], example: 'stable' })
+  interpretation!: string;
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: { type: 'object', additionalProperties: { type: 'number' } },
+    example: { A: { A: 20, B: 5, C: 0, watchlist: 0 }, B: { A: 3, B: 900, C: 22, watchlist: 0 } },
+    description: 'transitionMatrix[baselineTier][тир сценария] = число наблюдений кандидат×сценарий',
+  })
+  transitionMatrix!: Record<string, Record<string, number>>;
+}
+
+export class SensitivityResponseDto {
+  @ApiProperty({ type: ResponseContextDto }) context!: ResponseContextDto;
+  @ApiProperty({ example: 'rank_2026-08-28T09-12-00-000Z_deep-value' }) runId!: string;
+  @ApiProperty({ example: 'deep-value' }) rankingProfileId!: string;
+  @ApiProperty({ example: 'ranking-sensitivity-v1' }) formulaVersion!: string;
+  @ApiProperty({ type: SensitivityWeightsDto }) baselineWeights!: SensitivityWeightsDto;
+  @ApiProperty({ type: SensitivityScenarioDto, isArray: true, description: 'Ровно 25 уникальных нормированных наборов весов' })
+  scenarios!: SensitivityScenarioDto[];
+  @ApiProperty({ type: SensitivitySummaryDto }) summary!: SensitivitySummaryDto;
+  @ApiProperty({ type: PaginationDto }) pagination!: PaginationDto;
+  @ApiProperty({ type: SensitivityCandidateResultDto, isArray: true }) items!: SensitivityCandidateResultDto[];
+  @ApiProperty({
+    example:
+      'Исследовательский инструмент. Не является инвестиционной рекомендацией. ' +
+      'Каждое число проверяется по указанному источнику. Механизм возврата ценности ' +
+      'и условия его отключения не оценивались: они требуют чтения документации протокола.',
+    description: 'Дословный дисклеймер продукта, обязателен в каждом ranking-ответе',
+  })
+  disclaimer!: string;
 }

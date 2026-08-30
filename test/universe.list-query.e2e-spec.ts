@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request = require('supertest');
+import { TEST_ADMIN_KEY } from './support/admin-key';
 import { AppModule } from '../src/app.module';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -145,7 +146,7 @@ describe('ШАГ 1.1/1.2: GET /universe q/sort/order и GET /universe/options (e
     // Без включённого screen «отсев» — свойство композиции фильтров, а не снимка:
     // enabled:false в activeFilters возвращает весь снимок как прошедший.
     await request(app.getHttpServer())
-      .post('/universe/screen')
+      .post('/universe/screen').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ enabled: true, profileId: 'default' })
       .expect(201);
 
@@ -157,7 +158,7 @@ describe('ШАГ 1.1/1.2: GET /universe q/sort/order и GET /universe/options (e
     expect(rejected.passed).toBe(false);
     expect(rejected.rejectReason).toBeTruthy();
 
-    await request(app.getHttpServer()).post('/universe/screen').send({ enabled: false }).expect(201);
+    await request(app.getHttpServer()).post('/universe/screen').set('X-Admin-Key', TEST_ADMIN_KEY).send({ enabled: false }).expect(201);
   });
 
   it('sort=mcapCalcUsd&order=desc — null всегда в конце', async () => {

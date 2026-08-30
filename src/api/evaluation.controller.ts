@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { EvaluationService } from '../core/evaluation/evaluation.service';
 import type {
   EvaluationListResponse,
@@ -21,6 +21,7 @@ export class EvaluationController {
 
   @Post('run')
   @HttpCode(200)
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 5. Оценить всю текущую выборку одним вызовом',
     description:

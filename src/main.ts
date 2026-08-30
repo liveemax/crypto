@@ -1,7 +1,8 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { createSwaggerConfig } from './swagger.config';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -12,25 +13,15 @@ async function bootstrap(): Promise<void> {
     .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
-  if (origins.length > 0) app.enableCors({ origin: origins });
+  if (origins.length > 0) {
+    app.enableCors({
+      origin: origins,
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'X-Admin-Key'],
+    });
+  }
 
-  const config = new DocumentBuilder()
-    .setTitle('Crypto Agents')
-    .setDescription(
-      'Исследовательский инструмент. Выдаёт проверяемые данные с источниками и ' +
-        'уровнем уверенности, а не рекомендации покупать или продавать. ' +
-        'Каждое число снабжено ссылкой на источник и датой актуальности.',
-    )
-    .setVersion('1.0')
-    .addTag('system', 'Состояние системы: что идёт и что делать дальше')
-    .addTag('universe', 'Состав, числа, отбор и объяснение по одному токену')
-    .addTag('evaluation', 'Кодовая оценка: valuation, tokenomics, sectorPosition')
-    .addTag('ranking', 'Композит трёх компонентов и тиры A/B/C/watchlist')
-    .addTag('manual', 'Ручные вводы: разлоки, документация, оверрайды')
-    .addTag('config', 'Профили, пороги и веса')
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, createSwaggerConfig());
   SwaggerModule.setup('api', app, document, {
     swaggerOptions: { tryItOutEnabled: true, persistAuthorization: true },
   });
@@ -47,4 +38,10 @@ async function bootstrap(): Promise<void> {
   console.log(`Swagger: http://localhost:${port}/api`);
 }
 
-void bootstrap();
+// Ошибка старта (например, короткий ADMIN_API_KEY) — короткое сообщение без
+// stack trace: секрет в нём не участвует, а полный stack не должен утекать в лог.
+void bootstrap().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`Не удалось запустить сервис: ${message}`);
+  process.exit(1);
+});

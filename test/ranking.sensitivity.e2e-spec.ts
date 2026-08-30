@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request = require('supertest');
+import { TEST_ADMIN_KEY } from './support/admin-key';
 import { AppModule } from '../src/app.module';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -128,7 +129,7 @@ describe('POST /ranking/sensitivity (шаг 16.2, e2e)', () => {
 
   it('25 сценариев поверх сохранённого run, без нового ranking run и без сети', async () => {
     const run = await request(app.getHttpServer())
-      .post('/ranking/run')
+      .post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ profileId: 'deep-value' })
       .expect(200);
     const runId = run.body.runId as string;
@@ -136,7 +137,7 @@ describe('POST /ranking/sensitivity (шаг 16.2, e2e)', () => {
     const before = await request(app.getHttpServer()).get('/ranking/latest?limit=1').expect(200);
 
     const first = await request(app.getHttpServer())
-      .post('/ranking/sensitivity')
+      .post('/ranking/sensitivity').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ runId })
       .expect(200);
 
@@ -157,7 +158,7 @@ describe('POST /ranking/sensitivity (шаг 16.2, e2e)', () => {
 
     // Повтор того же запроса детерминирован.
     const second = await request(app.getHttpServer())
-      .post('/ranking/sensitivity')
+      .post('/ranking/sensitivity').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ runId })
       .expect(200);
     expect(second.body.summary).toEqual(first.body.summary);
@@ -171,12 +172,12 @@ describe('POST /ranking/sensitivity (шаг 16.2, e2e)', () => {
 
   it('LEND3 с подтверждённым отрицательным NHY остаётся watchlist во всех 25 сценариях', async () => {
     const run = await request(app.getHttpServer())
-      .post('/ranking/run')
+      .post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ profileId: 'deep-value' })
       .expect(200);
 
     const response = await request(app.getHttpServer())
-      .post('/ranking/sensitivity')
+      .post('/ranking/sensitivity').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ runId: run.body.runId })
       .expect(200);
 
@@ -195,7 +196,7 @@ describe('POST /ranking/sensitivity (шаг 16.2, e2e)', () => {
 
   it('НЕГАТИВНЫЙ: несуществующий runId — 4xx с code, details, nextAction', async () => {
     const response = await request(app.getHttpServer())
-      .post('/ranking/sensitivity')
+      .post('/ranking/sensitivity').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ runId: 'not-existing-run' });
 
     expect(response.status).toBeGreaterThanOrEqual(400);
@@ -206,7 +207,7 @@ describe('POST /ranking/sensitivity (шаг 16.2, e2e)', () => {
   });
 
   it('НЕГАТИВНЫЙ: тело без runId — 4xx нормализованной валидации', async () => {
-    const response = await request(app.getHttpServer()).post('/ranking/sensitivity').send({});
+    const response = await request(app.getHttpServer()).post('/ranking/sensitivity').set('X-Admin-Key', TEST_ADMIN_KEY).send({});
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(response.status).toBeLessThan(500);

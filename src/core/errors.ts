@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 
 /** Что нажать дальше. Ошибка без перехода — тупик, а тупик это дефект интерфейса. */
 export interface NextAction {
@@ -75,4 +80,13 @@ export function conflict(
   nextAction: NextAction | null = null,
 ): ConflictException {
   return new ConflictException(errorBody(code, message, details, nextAction));
+}
+
+export function unauthorized(
+  code: string,
+  message: string,
+  details: Record<string, unknown> | null = null,
+  nextAction: NextAction | null = null,
+): UnauthorizedException {
+  return new UnauthorizedException(errorBody(code, message, details, nextAction));
 }

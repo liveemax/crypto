@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request = require('supertest');
+import { TEST_ADMIN_KEY } from './support/admin-key';
 import { AppModule } from '../src/app.module';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -143,7 +144,7 @@ describe('ШАГ 1.3/1.4: GET /ranking/latest q/rankTier/dataTier/comparisonGrou
   });
 
   it('q ищет по evaluation.name/ticker/coingeckoId без учёта регистра', async () => {
-    await request(app.getHttpServer()).post('/ranking/run').send({ profileId: 'default' }).expect(200);
+    await request(app.getHttpServer()).post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY).send({ profileId: 'default' }).expect(200);
     const response = await request(app.getHttpServer()).get('/ranking/latest?q=uni').expect(200);
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.items[0].ticker).toBe('UNI');

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request = require('supertest');
+import { TEST_ADMIN_KEY } from './support/admin-key';
 import { AppModule } from '../src/app.module';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -113,7 +114,7 @@ describe('ManualController: POST/GET /manual/overrides/{token} (шаг 14.1, e2e
 
   it('POST сохраняет override, GET читает его по ticker и по coingeckoId как один объект', async () => {
     const posted = await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send(validBody)
       .expect(201);
 
@@ -132,9 +133,9 @@ describe('ManualController: POST/GET /manual/overrides/{token} (шаг 14.1, e2e
   });
 
   it('повторный POST заменяет запись: GET видит одну актуальную версию', async () => {
-    await request(app.getHttpServer()).post('/manual/overrides/AAVE').send(validBody).expect(201);
+    await request(app.getHttpServer()).post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY).send(validBody).expect(201);
     await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ ...validBody, incentives12mUsd: 3_000_000 })
       .expect(201);
 
@@ -149,7 +150,7 @@ describe('ManualController: POST/GET /manual/overrides/{token} (шаг 14.1, e2e
 
   it('НЕГАТИВНЫЙ: без sourceUrl — 400 с code и nextAction в теле', async () => {
     const response = await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ incentives12mUsd: 1_200_000, asOf: validBody.asOf })
       .expect(400);
 
@@ -159,35 +160,35 @@ describe('ManualController: POST/GET /manual/overrides/{token} (шаг 14.1, e2e
 
   it('НЕГАТИВНЫЙ: без asOf — 400', async () => {
     await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ incentives12mUsd: 1_200_000, sourceUrl: validBody.sourceUrl })
       .expect(400);
   });
 
   it('НЕГАТИВНЫЙ: неверный sourceUrl — 400', async () => {
     await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ ...validBody, sourceUrl: 'not-a-url' })
       .expect(400);
   });
 
   it('НЕГАТИВНЫЙ: неверный asOf — 400', async () => {
     await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ ...validBody, asOf: 'не-дата' })
       .expect(400);
   });
 
   it('НЕГАТИВНЫЙ: отрицательный incentives12mUsd — 400', async () => {
     await request(app.getHttpServer())
-      .post('/manual/overrides/AAVE')
+      .post('/manual/overrides/AAVE').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ ...validBody, incentives12mUsd: -1 })
       .expect(400);
   });
 
   it('НЕГАТИВНЫЙ: неоднозначный тикер — 409 со списком coingeckoId', async () => {
     const response = await request(app.getHttpServer())
-      .post('/manual/overrides/DUP')
+      .post('/manual/overrides/DUP').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send(validBody)
       .expect(409);
 
@@ -199,7 +200,7 @@ describe('ManualController: POST/GET /manual/overrides/{token} (шаг 14.1, e2e
   });
 
   it('НЕГАТИВНЫЙ: неизвестный токен — нормализованная 4xx', async () => {
-    const response = await request(app.getHttpServer()).post('/manual/overrides/NOPE').send(validBody);
+    const response = await request(app.getHttpServer()).post('/manual/overrides/NOPE').set('X-Admin-Key', TEST_ADMIN_KEY).send(validBody);
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(response.status).toBeLessThan(500);
     expect(typeof response.body.code).toBe('string');
@@ -207,7 +208,7 @@ describe('ManualController: POST/GET /manual/overrides/{token} (шаг 14.1, e2e
 
   it('подтверждённый ноль сохраняется как ноль, а не как отсутствие', async () => {
     const response = await request(app.getHttpServer())
-      .post('/manual/overrides/wrapped-x')
+      .post('/manual/overrides/wrapped-x').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ ...validBody, incentives12mUsd: 0 })
       .expect(201);
 

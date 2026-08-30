@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOkResponse, ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import {
   UniverseCompareResponseDto,
   RefreshUniverseDto,
@@ -31,6 +31,7 @@ export class UniverseController {
   constructor(private readonly universe: UniverseService) {}
 
   @Post('refresh')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 1. Скачать состав вселенной. Раз в месяц, ~25 запросов',
     description:
@@ -54,6 +55,7 @@ export class UniverseController {
   }
 
   @Post('prices')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 2. Обновить цены и выручку по тому же составу',
     description:
@@ -69,6 +71,7 @@ export class UniverseController {
   }
 
   @Post('screen')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 3. Фильтр шлака: включить или выключить',
     description:
@@ -113,6 +116,7 @@ export class UniverseController {
   }
 
   @Post('alpha')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 4. Лидеры ниш: включить или выключить',
     description:
@@ -165,6 +169,7 @@ export class UniverseController {
   }
 
   @Post('compare')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'Сравнить два профиля на одной вселенной',
     description:

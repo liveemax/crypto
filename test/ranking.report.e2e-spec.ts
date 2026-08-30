@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request = require('supertest');
+import { TEST_ADMIN_KEY } from './support/admin-key';
 import { AppModule } from '../src/app.module';
 import { RESEARCH_DISCLAIMER } from '../src/core/disclaimer';
 import { StoreService } from '../src/core/store/store.service';
@@ -116,12 +117,12 @@ describe('GET /ranking/report/:runId и reports/journal.md (шаг 16.1, e2e)', 
 
   it('два прогона в один день сохраняют разные отчёты по runId, без перезаписи', async () => {
     const first = await request(app.getHttpServer())
-      .post('/ranking/run')
+      .post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ profileId: 'deep-value' })
       .expect(200);
     await new Promise((resolve) => setTimeout(resolve, 5));
     const second = await request(app.getHttpServer())
-      .post('/ranking/run')
+      .post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ profileId: 'deep-value' })
       .expect(200);
 
@@ -157,7 +158,7 @@ describe('GET /ranking/report/:runId и reports/journal.md (шаг 16.1, e2e)', 
   });
 
   it('дисклеймер дословно присутствует в evaluation и ranking JSON-ответах', async () => {
-    await request(app.getHttpServer()).post('/ranking/run').send({ profileId: 'deep-value' }).expect(200);
+    await request(app.getHttpServer()).post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY).send({ profileId: 'deep-value' }).expect(200);
 
     const evaluationLatest = await request(app.getHttpServer())
       .get('/evaluation/latest?limit=1')

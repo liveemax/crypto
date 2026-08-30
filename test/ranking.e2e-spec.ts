@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request = require('supertest');
+import { TEST_ADMIN_KEY } from './support/admin-key';
 import { AppModule } from '../src/app.module';
 import { StoreService } from '../src/core/store/store.service';
 import { EMPTY_TOKENOMICS } from '../src/core/tokenomics/tokenomics.constants';
@@ -137,7 +138,7 @@ describe('RankingController: POST /ranking/run, GET /ranking/latest (шаг 15.2
 
   it('POST /ranking/run отвечает 200 синхронно, без jobId, и сам пересчитывает evaluation', async () => {
     const response = await request(app.getHttpServer())
-      .post('/ranking/run')
+      .post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ profileId: 'deep-value' })
       .expect(200);
 
@@ -160,7 +161,7 @@ describe('RankingController: POST /ranking/run, GET /ranking/latest (шаг 15.2
   });
 
   it('LEND3 с подтверждённым отрицательным NHY остаётся в ответе как watchlist, а не исчезает', async () => {
-    await request(app.getHttpServer()).post('/ranking/run').send({ profileId: 'deep-value' }).expect(200);
+    await request(app.getHttpServer()).post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY).send({ profileId: 'deep-value' }).expect(200);
     const page = await request(app.getHttpServer())
       .get('/ranking/latest?offset=0&limit=50&view=summary')
       .expect(200);
@@ -175,7 +176,7 @@ describe('RankingController: POST /ranking/run, GET /ranking/latest (шаг 15.2
   });
 
   it('view=full отдаёт полную evaluation-карточку одного кандидата', async () => {
-    await request(app.getHttpServer()).post('/ranking/run').send({ profileId: 'deep-value' }).expect(200);
+    await request(app.getHttpServer()).post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY).send({ profileId: 'deep-value' }).expect(200);
     const page = await request(app.getHttpServer())
       .get('/ranking/latest?offset=0&limit=1&view=full')
       .expect(200);
@@ -198,7 +199,7 @@ describe('RankingController: POST /ranking/run, GET /ranking/latest (шаг 15.2
 
   it('НЕГАТИВНЫЙ: несуществующий profileId — 4xx с code, details, nextAction', async () => {
     const response = await request(app.getHttpServer())
-      .post('/ranking/run')
+      .post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY)
       .send({ profileId: 'not-a-real-profile' });
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(response.status).toBeLessThan(500);
@@ -208,7 +209,7 @@ describe('RankingController: POST /ranking/run, GET /ranking/latest (шаг 15.2
   });
 
   it('default-ответ GET /ranking/latest меньше 300 КБ на e2e fixture', async () => {
-    await request(app.getHttpServer()).post('/ranking/run').send({ profileId: 'deep-value' }).expect(200);
+    await request(app.getHttpServer()).post('/ranking/run').set('X-Admin-Key', TEST_ADMIN_KEY).send({ profileId: 'deep-value' }).expect(200);
     const response = await request(app.getHttpServer()).get('/ranking/latest').expect(200);
     const size = Buffer.byteLength(JSON.stringify(response.body), 'utf8');
     expect(size).toBeLessThan(300 * 1024);

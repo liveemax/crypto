@@ -1,5 +1,13 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
-import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiProduces, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiProduces,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { RankingService } from '../core/ranking/ranking.service';
 import type { SensitivityResult } from '../core/ranking/sensitivity.types';
 import type {
@@ -33,6 +41,7 @@ export class RankingController {
 
   @Post('run')
   @HttpCode(200)
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'Построить и сохранить рейтинг одним вызовом',
     description:
@@ -87,6 +96,7 @@ export class RankingController {
 
   @Post('sensitivity')
   @HttpCode(200)
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 16.2. Насколько итог зависит от весов профиля',
     description:

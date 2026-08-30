@@ -13,6 +13,9 @@ export class StoreService {
     @Optional()
     @Inject('STORE_ROOT')
     private readonly root: string = join(process.cwd(), 'data'),
+    @Optional()
+    @Inject('REPORTS_ROOT')
+    private readonly reportsRoot: string = join(process.cwd(), 'reports'),
   ) {}
 
   /** Возвращает непросроченное значение из файлового кэша. */
@@ -101,6 +104,60 @@ export class StoreService {
       if (this.isMissing(error)) return null;
       throw error;
     }
+  }
+
+  /**
+   * Сохраняет markdown-отчёт прогона под его runId, а не под датой: два прогона
+   * за день получают разные файлы. Каталог reports/ — соседний с data/, вне git.
+   */
+  async saveReport(kind: string, runId: string, text: string): Promise<string> {
+    const dir = join(this.reportsRoot, this.safe(kind), this.today());
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${this.safe(runId)}.md`);
+    await writeFile(path, text, { encoding: 'utf8', flag: 'wx' });
+    return path;
+  }
+
+  /** Читает сохранённый отчёт по runId среди всех дат; не найден — null, а не исключение. */
+  async loadReport(kind: string, runId: string): Promise<string | null> {
+    const dir = join(this.reportsRoot, this.safe(kind));
+    let dates: string[];
+    try {
+      dates = (await readdir(dir, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return null;
+      throw error;
+    }
+    for (const date of dates) {
+      const path = join(dir, date, `${this.safe(runId)}.md`);
+      try {
+        return await readFile(path, 'utf8');
+      } catch (error: unknown) {
+        if (!this.isMissing(error)) throw error;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Дополняет журнал одной строкой на runId; runId уже есть в файле — no-op.
+   * Заголовок пишется только при создании файла, не при каждой записи.
+   */
+  async appendJournal(name: string, runId: string, line: string, header: string): Promise<boolean> {
+    const path = join(this.reportsRoot, `${this.safe(name)}.md`);
+    await mkdir(this.reportsRoot, { recursive: true });
+    let existing = '';
+    try {
+      existing = await readFile(path, 'utf8');
+    } catch (error: unknown) {
+      if (!this.isMissing(error)) throw error;
+    }
+    if (existing.includes(runId)) return false;
+    const prefix = existing.length > 0 ? existing : `${header}\n`;
+    await writeFile(path, `${prefix}${line}\n`, 'utf8');
+    return true;
   }
 
   /** Сохраняет результат агента в каталоге текущей даты. */

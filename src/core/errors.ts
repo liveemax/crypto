@@ -23,6 +23,7 @@ export const NEXT: Record<string, NextAction> = {
   runEvaluation: { method: 'POST', path: '/evaluation/run', body: {} },
   latestEvaluation: { method: 'GET', path: '/evaluation/latest', body: {} },
   runRanking: { method: 'POST', path: '/ranking/run', body: {} },
+  latestRanking: { method: 'GET', path: '/ranking/latest', body: {} },
   status: { method: 'GET', path: '/status', body: {} },
   profiles: { method: 'GET', path: '/config/profiles', body: {} },
   swagger: { method: 'GET', path: '/api', body: {} },

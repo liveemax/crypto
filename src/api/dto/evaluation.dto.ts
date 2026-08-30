@@ -221,6 +221,14 @@ export class EvaluationListResponseDto {
     description: 'view=summary — баллы и качество; view=full — блоки целиком',
   })
   items!: unknown[];
+  @ApiProperty({
+    example:
+      'Исследовательский инструмент. Не является инвестиционной рекомендацией. ' +
+      'Каждое число проверяется по указанному источнику. Механизм возврата ценности ' +
+      'и условия его отключения не оценивались: они требуют чтения документации протокола.',
+    description: 'Дословный дисклеймер продукта, обязателен в каждом evaluation-ответе',
+  })
+  disclaimer!: string;
 }
 
 export class EvaluationComponentReuseDto {
@@ -262,4 +270,12 @@ export class EvaluationTokenResponseDto {
   nextAction!: Record<string, unknown> | null;
   @ApiProperty({ type: CandidateEvaluationDto, nullable: true })
   evaluation!: CandidateEvaluationDto | null;
+  @ApiProperty({
+    example:
+      'Исследовательский инструмент. Не является инвестиционной рекомендацией. ' +
+      'Каждое число проверяется по указанному источнику. Механизм возврата ценности ' +
+      'и условия его отключения не оценивались: они требуют чтения документации протокола.',
+    description: 'Дословный дисклеймер продукта, обязателен в каждом evaluation-ответе',
+  })
+  disclaimer!: string;
 }

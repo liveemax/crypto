@@ -138,6 +138,14 @@ export class RankingListResponseDto {
     description: 'view=summary — баллы и тир; view=full — полная evaluation-карточка каждого кандидата',
   })
   items!: unknown[];
+  @ApiProperty({
+    example:
+      'Исследовательский инструмент. Не является инвестиционной рекомендацией. ' +
+      'Каждое число проверяется по указанному источнику. Механизм возврата ценности ' +
+      'и условия его отключения не оценивались: они требуют чтения документации протокола.',
+    description: 'Дословный дисклеймер продукта, обязателен в каждом ranking-ответе',
+  })
+  disclaimer!: string;
 }
 
 export class RankingRunResponseDto extends RankingListResponseDto {

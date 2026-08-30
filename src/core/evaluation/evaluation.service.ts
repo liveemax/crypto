@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { resolveProfile } from '../../config/profiles';
+import { RESEARCH_DISCLAIMER } from '../disclaimer';
 import { ManualService } from '../manual/manual.service';
 import { add, div, round } from '../money';
 import { StoreService } from '../store/store.service';
@@ -288,6 +289,7 @@ export class EvaluationService {
         reason: 'Кодовой оценки ещё не было ни разу.',
         nextAction: { method: 'POST', path: '/evaluation/run', body: {} },
         evaluation: null,
+        disclaimer: RESEARCH_DISCLAIMER,
       };
     }
 
@@ -313,6 +315,7 @@ export class EvaluationService {
         reason: null,
         nextAction: null,
         evaluation: matches[0],
+        disclaimer: RESEARCH_DISCLAIMER,
       };
     }
 
@@ -323,6 +326,7 @@ export class EvaluationService {
       reason: await this.absenceReason(wanted),
       nextAction: { method: 'GET', path: '/universe/funnel', body: {} },
       evaluation: null,
+      disclaimer: RESEARCH_DISCLAIMER,
     };
   }
 
@@ -381,6 +385,7 @@ export class EvaluationService {
         hasMore: offset + page.length < run.candidates.length,
       },
       items: query.view === 'full' ? page : page.map(summaryRow),
+      disclaimer: RESEARCH_DISCLAIMER,
     };
   }
 }

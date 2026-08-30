@@ -184,6 +184,8 @@ export interface EvaluationListResponse {
   notEvaluated: NotEvaluatedComponent[];
   pagination: PaginationInfo;
   items: (CandidateEvaluation | EvaluationSummaryRow)[];
+  /** Дословный дисклеймер продукта, обязателен в каждом evaluation-ответе. */
+  disclaimer: string;
 }
 
 export interface EvaluationRunResponse extends EvaluationListResponse {
@@ -202,4 +204,6 @@ export interface EvaluationTokenResponse {
   reason: string | null;
   nextAction: { method: string; path: string; body: Record<string, unknown> } | null;
   evaluation: CandidateEvaluation | null;
+  /** Дословный дисклеймер продукта, обязателен в каждом evaluation-ответе. */
+  disclaimer: string;
 }

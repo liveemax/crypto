@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { resolveProfile } from '../../config/profiles';
-import { conflict, NEXT } from '../errors';
+import { RESEARCH_DISCLAIMER } from '../disclaimer';
+import { conflict, notFound, NEXT } from '../errors';
 import { paginate } from '../envelope';
 import { EvaluationService } from '../evaluation/evaluation.service';
 import type { EvaluationRun } from '../evaluation/evaluation.types';
 import { StoreService } from '../store/store.service';
 import { rankCandidate } from './ranking.candidate';
 import { RANKING_FORMULA_VERSION } from './ranking.constants';
+import { rankingJournalRow, RANKING_JOURNAL_HEADER } from './ranking.journal';
+import { renderRankingReport } from './ranking.report';
 import { rankingSummaryRow } from './ranking.summary';
 import type {
   RankedCandidate,
@@ -19,6 +22,7 @@ import type {
 } from './ranking.types';
 
 const STORE_KIND = 'rankings';
+const JOURNAL_NAME = 'journal';
 const EMPTY_TIERS: Record<RankTier, number> = { A: 0, B: 0, C: 0, watchlist: 0 };
 
 @Injectable()
@@ -59,6 +63,18 @@ export class RankingService {
     };
 
     await this.store.saveRun(STORE_KIND, rankingRun.runId, rankingRun);
+
+    // Отчёт и журнал пишутся на каждый прогон, а не только через HTTP: run() —
+    // единственная точка, где ranking run фактически посчитан и сохранён.
+    const report = renderRankingReport(rankingRun);
+    await this.store.saveReport(STORE_KIND, rankingRun.runId, report);
+    await this.store.appendJournal(
+      JOURNAL_NAME,
+      rankingRun.runId,
+      rankingJournalRow(rankingRun),
+      RANKING_JOURNAL_HEADER,
+    );
+
     return rankingRun;
   }
 
@@ -92,6 +108,20 @@ export class RankingService {
     return this.envelope(run, query);
   }
 
+  /** Уже сохранённый markdown-отчёт по runId; ничего не пересчитывает. */
+  async report(runId: string): Promise<string> {
+    const text = await this.store.loadReport(STORE_KIND, runId);
+    if (text === null) {
+      throw notFound(
+        'ranking_report_missing',
+        `Отчёт для runId ${runId} не найден.`,
+        { runId },
+        NEXT.latestRanking,
+      );
+    }
+    return text;
+  }
+
   private envelope(run: RankingRun, query: RankingListQuery): RankingListResponse {
     const { page, pagination } = paginate(run.candidates, query);
     return {
@@ -109,6 +139,7 @@ export class RankingService {
       notEvaluated: run.notEvaluated,
       pagination,
       items: query.view === 'full' ? page : page.map(rankingSummaryRow),
+      disclaimer: RESEARCH_DISCLAIMER,
     };
   }
 

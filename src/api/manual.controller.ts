@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
-import { ApiOperation, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiOkResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsISO8601, IsNumber, IsPositive, IsString, IsUrl, Min } from 'class-validator';
 import { ManualService } from '../core/manual/manual.service';
@@ -98,6 +98,7 @@ export class ManualController {
   constructor(private readonly manual: ManualService) {}
 
   @Post('unlocks')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'Добавить разлок руками [advanced]',
     description:
@@ -122,6 +123,7 @@ export class ManualController {
   }
 
   @Delete('unlocks/:id')
+  @ApiSecurity('admin-key')
   @ApiOperation({ summary: 'Удалить ручной разлок по идентификатору' })
   async remove(@Param('id') id: string): Promise<{ deleted: string }> {
     await this.manual.removeUnlock(id);
@@ -129,6 +131,7 @@ export class ManualController {
   }
 
   @Post('overrides/:token')
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'Сохранить ручной override стимулов [advanced]',
     description:

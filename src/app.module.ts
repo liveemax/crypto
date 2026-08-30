@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { AppConfigModule } from './config/config.module';
+import { validateEnv } from './config/env.validation';
 import { ApiExceptionFilter } from './api/http/api-exception.filter';
+import { AdminKeyGuard } from './api/http/admin-key.guard';
 import { EvaluationModule } from './core/evaluation/evaluation.module';
 import { ManualModule } from './core/manual/manual.module';
 import { RankingModule } from './core/ranking/ranking.module';
@@ -15,7 +17,7 @@ import { JobsModule } from './core/jobs/jobs.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     CoreModule,
     JobsModule,
     AppConfigModule,
@@ -30,6 +32,9 @@ import { JobsModule } from './core/jobs/jobs.module';
     SystemModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_FILTER, useClass: ApiExceptionFilter }],
+  providers: [
+    { provide: APP_FILTER, useClass: ApiExceptionFilter },
+    { provide: APP_GUARD, useClass: AdminKeyGuard },
+  ],
 })
 export class AppModule {}

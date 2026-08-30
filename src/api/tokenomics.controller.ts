@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsOptional } from 'class-validator';
@@ -26,6 +26,7 @@ export class TokenomicsController {
 
   @Post('tokenomics')
   @HttpCode(202)
+  @ApiSecurity('admin-key')
   @ApiOperation({
     summary: 'ШАГ 2.5. Собрать календарь разлоков для всей вселенной',
     description:

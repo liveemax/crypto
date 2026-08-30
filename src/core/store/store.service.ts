@@ -107,6 +107,33 @@ export class StoreService {
   }
 
   /**
+   * Читает произвольный сохранённый прогон по его runId среди всех дат — тот же
+   * обход каталогов, что и у loadReport для markdown. Не найден — null, а не
+   * исключение: runId из чужого прогона или опечатка не должны падать 500.
+   */
+  async loadRunById<T>(kind: string, runId: string): Promise<T | null> {
+    const dir = join(this.root, this.safe(kind));
+    let dates: string[];
+    try {
+      dates = (await readdir(dir, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+    } catch (error: unknown) {
+      if (this.isMissing(error)) return null;
+      throw error;
+    }
+    for (const date of dates) {
+      const path = join(dir, date, `${this.safe(runId)}.json`);
+      try {
+        return await this.readJson<T>(path);
+      } catch (error: unknown) {
+        if (!this.isMissing(error)) throw error;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Сохраняет markdown-отчёт прогона под его runId, а не под датой: два прогона
    * за день получают разные файлы. Каталог reports/ — соседний с data/, вне git.
    */

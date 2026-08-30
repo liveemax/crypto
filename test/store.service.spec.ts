@@ -45,6 +45,28 @@ describe('StoreService', () => {
     await expect(store.loadReport('rankings', 'not-existing-run')).resolves.toBeNull();
   });
 
+  it('loadRunById находит прогон по runId среди всех дат, latest.json не трогает', async () => {
+    await store.saveRun('rankings', 'rank_2026-08-30T00-00-00-000Z_deep-value', { runId: 'first' });
+    await store.saveRun('rankings', 'rank_2026-08-30T01-00-00-000Z_deep-value', { runId: 'second' });
+
+    await expect(
+      store.loadRunById('rankings', 'rank_2026-08-30T00-00-00-000Z_deep-value'),
+    ).resolves.toEqual({ runId: 'first' });
+    await expect(
+      store.loadRunById('rankings', 'rank_2026-08-30T01-00-00-000Z_deep-value'),
+    ).resolves.toEqual({ runId: 'second' });
+  });
+
+  it('loadRunById: неизвестный runId — null, а не исключение', async () => {
+    await store.saveRun('rankings', 'rank_2026-08-30T00-00-00-000Z_deep-value', { runId: 'first' });
+
+    await expect(store.loadRunById('rankings', 'not-existing-run')).resolves.toBeNull();
+  });
+
+  it('loadRunById: каталога вида ещё нет — null, а не исключение', async () => {
+    await expect(store.loadRunById('rankings', 'anything')).resolves.toBeNull();
+  });
+
   it('appendJournal пишет заголовок один раз и не дублирует строку на тот же runId', async () => {
     const first = await store.appendJournal('journal', 'run-1', '| run-1 | 5 |', '| id | n |\n|---|---|');
     const second = await store.appendJournal('journal', 'run-1', '| run-1 | 5 |', '| id | n |\n|---|---|');

@@ -1,8 +1,16 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
 import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { RankingService } from '../core/ranking/ranking.service';
+import type { SensitivityResult } from '../core/ranking/sensitivity.types';
 import type { RankingListResponse, RankingRunResponse } from '../core/ranking/ranking.types';
-import { RankingListResponseDto, RankingQueryDto, RankingRunDto, RankingRunResponseDto } from './dto/ranking.dto';
+import {
+  RankingListResponseDto,
+  RankingQueryDto,
+  RankingRunDto,
+  RankingRunResponseDto,
+  SensitivityResponseDto,
+  SensitivityRunDto,
+} from './dto/ranking.dto';
 
 /**
  * Только заголовок, который нужен отчёту. Не express.Response: типов express
@@ -52,6 +60,27 @@ export class RankingController {
   @ApiOkResponse({ type: RankingListResponseDto })
   async latest(@Query() query: RankingQueryDto): Promise<RankingListResponse> {
     return this.ranking.list(query);
+  }
+
+  @Post('sensitivity')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'ШАГ 16.2. Насколько итог зависит от весов профиля',
+    description:
+      'Прогоняет кандидатов уже сохранённого ranking run через 25 детерминированных ' +
+      'весовых сценариев (сетка множителей tokenomics×valuation 5×5, sectorPosition ' +
+      'всегда ×1.00, после множителя веса нормируются до суммы 1).\n\n' +
+      'Ничего не пересчитывает и не сохраняет: ни evaluation, ни новый ranking run, ' +
+      'сети и JobService тоже нет — только чтение сохранённого run по runId и чистый ' +
+      'расчёт. Hard filters, dataQuality, missing components и flagPenalty в сценариях ' +
+      'не меняются: изолируется именно эффект весов.\n\n' +
+      'summary.interpretation: stable — тир сменился не более чем у 10% кандидатов с ' +
+      'composite; sensitive — больше 10%; insufficient_data — таких кандидатов меньше 20.',
+  })
+  @ApiBody({ type: SensitivityRunDto })
+  @ApiOkResponse({ type: SensitivityResponseDto })
+  async sensitivity(@Body() body: SensitivityRunDto): Promise<SensitivityResult> {
+    return this.ranking.sensitivity({ runId: body.runId, offset: body.offset, limit: body.limit });
   }
 
   @Get('report/:runId')

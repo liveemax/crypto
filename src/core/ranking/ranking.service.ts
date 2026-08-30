@@ -7,10 +7,12 @@ import { EvaluationService } from '../evaluation/evaluation.service';
 import type { EvaluationRun } from '../evaluation/evaluation.types';
 import { StoreService } from '../store/store.service';
 import { rankCandidate } from './ranking.candidate';
-import { RANKING_FORMULA_VERSION } from './ranking.constants';
+import { RANKING_FORMULA_VERSION, SENSITIVITY_FORMULA_VERSION } from './ranking.constants';
 import { rankingJournalRow, RANKING_JOURNAL_HEADER } from './ranking.journal';
 import { renderRankingReport } from './ranking.report';
 import { rankingSummaryRow } from './ranking.summary';
+import { buildScenarios, sensitivityReportOf } from './sensitivity';
+import type { SensitivityResult, SensitivityRunRequest } from './sensitivity.types';
 import type {
   RankedCandidate,
   RankingListQuery,
@@ -106,6 +108,47 @@ export class RankingService {
       );
     }
     return this.envelope(run, query);
+  }
+
+  /**
+   * ШАГ 16.2: насколько итог зависит от весов профиля. Читает уже сохранённый
+   * ranking run по runId и прогоняет его кандидатов через 25 детерминированных
+   * весовых сценариев. Ничего не пересчитывает и не сохраняет: ни evaluation,
+   * ни новый ranking run, сети и JobService тоже нет.
+   */
+  async sensitivity(request: SensitivityRunRequest): Promise<SensitivityResult> {
+    const run = await this.store.loadRunById<RankingRun>(STORE_KIND, request.runId);
+    if (run === null) {
+      throw notFound(
+        'ranking_run_missing',
+        `Ranking run ${request.runId} не найден.`,
+        { runId: request.runId },
+        NEXT.latestRanking,
+      );
+    }
+
+    const profile = resolveProfile(run.rankingProfileId);
+    const scenarios = buildScenarios(profile.weights);
+    const { results, summary } = sensitivityReportOf(run.candidates, scenarios, profile);
+    const { page, pagination } = paginate(results, request);
+
+    return {
+      context: {
+        universeVersion: run.universeVersion,
+        builtAt: run.builtAt,
+        activeFilters: run.activeFilters,
+        asOf: run.createdAt,
+      },
+      runId: run.runId,
+      rankingProfileId: run.rankingProfileId,
+      formulaVersion: SENSITIVITY_FORMULA_VERSION,
+      baselineWeights: profile.weights,
+      scenarios,
+      summary,
+      pagination,
+      items: page,
+      disclaimer: RESEARCH_DISCLAIMER,
+    };
   }
 
   /** Уже сохранённый markdown-отчёт по runId; ничего не пересчитывает. */

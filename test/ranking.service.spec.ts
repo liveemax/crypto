@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { DEEP_VALUE_PROFILE, DEFAULT_PROFILE } from '../src/config/profiles';
 import { EvaluationService } from '../src/core/evaluation/evaluation.service';
 import type { EvaluationRun } from '../src/core/evaluation/evaluation.types';
@@ -173,6 +174,10 @@ describe('ШАГ 15.1: ядро ranking, композит и сохранени�
         if (kind === 'rankings') return rankingRuns.at(-1) ?? null;
         return null;
       }),
+      loadRunById: jest.fn(async (kind: string, runId: string) => {
+        if (kind !== 'rankings') return null;
+        return rankingRuns.find((run) => run.runId === runId) ?? null;
+      }),
       saveReport: jest.fn(async () => '/tmp/report.md'),
       loadReport: jest.fn(async () => null),
       appendJournal: jest.fn(async () => true),
@@ -281,5 +286,52 @@ describe('ШАГ 15.1: ядро ranking, композит и сохранени�
     expect(dx1.composite).toBe(
       Math.max(0, Math.round((dx1.compositeBase! - dx1.evaluation.flagPenalty) * 10) / 10),
     );
+  });
+
+  describe('sensitivity(): ШАГ 16.2, 25 весовых сценариев поверх сохранённого run', () => {
+    it('ровно 25 сценариев, ни сети, ни нового ranking run', async () => {
+      const run = await ranking.run({ profileId: 'default' });
+      const before = rankingRuns.length;
+
+      const result = await ranking.sensitivity({ runId: run.runId });
+
+      expect(result.scenarios).toHaveLength(25);
+      expect(result.runId).toBe(run.runId);
+      expect(rankingRuns.length).toBe(before);
+      expect(result.summary.scenarioCount).toBe(25);
+    });
+
+    it('повтор того же запроса детерминирован', async () => {
+      const run = await ranking.run({ profileId: 'default' });
+
+      const first = await ranking.sensitivity({ runId: run.runId });
+      const second = await ranking.sensitivity({ runId: run.runId });
+
+      expect(first.summary).toEqual(second.summary);
+      expect(first.items).toEqual(second.items);
+    });
+
+    it('NEG с хард-фильтром tokenomics остаётся watchlist во всех 25 сценариях', async () => {
+      const run = await ranking.run({ profileId: 'default' });
+      const result = await ranking.sensitivity({ runId: run.runId });
+
+      const neg = result.items.find((item) => item.ticker === 'NEG');
+      expect(neg).toBeDefined();
+      expect(neg?.baselineTier).toBe('watchlist');
+      expect(neg?.tierChanges).toBe(0);
+      expect(neg?.tiersReached).toEqual(['watchlist']);
+    });
+
+    it('НЕГАТИВНЫЙ: неизвестный runId — нормализованная 4xx с nextAction на GET /ranking/latest', async () => {
+      expect.assertions(3);
+      try {
+        await ranking.sensitivity({ runId: 'not-existing-run' });
+      } catch (error) {
+        expect(error).toBeInstanceOf(NotFoundException);
+        const response = (error as NotFoundException).getResponse() as Record<string, unknown>;
+        expect(response.code).toBe('ranking_run_missing');
+        expect(response.nextAction).toEqual({ method: 'GET', path: '/ranking/latest', body: {} });
+      }
+    });
   });
 });

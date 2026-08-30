@@ -37,9 +37,11 @@ export function rankCandidate(candidate: CandidateEvaluation, profile: AnalysisP
 
 /**
  * Тиры шага 15.1: хард-фильтр обязателен раньше числа, а тир A требует не
- * только composite профиля, но и отдельный порог качества данных.
+ * только composite профиля, но и отдельный порог качества данных. Экспортная —
+ * sensitivity шага 16.2 пересчитывает тир по тем же правилам, но с фиксированным
+ * dataQuality baseline и весами сценария, а не второй копией этой логики.
  */
-function tierOf(
+export function tierOf(
   hardFilters: HardFilterReason[],
   final: number | null,
   dataQuality: number,
